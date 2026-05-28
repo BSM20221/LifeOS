@@ -45,6 +45,7 @@ import {
 import { getCompletedFocusMinutes, resolveFocusSessionProjectId } from "../focusUtils";
 import { EmptyState, MetricCard } from "./Common";
 import { DailyQuoteCard } from "./QuoteComponents";
+import { ReportingDashboard } from "./ReportingComponents";
 
 const rangeOptions: Array<{ value: AnalyticsRange; label: string }> = [
   { value: "today", label: "Today" },
@@ -97,6 +98,7 @@ type TopThreeDatum = ChartDatum & {
 };
 
 export function InsightsPage({
+  userId,
   tasks,
   projects,
   focusSessions,
@@ -110,6 +112,7 @@ export function InsightsPage({
   onRefreshQuote,
   onToggleFavoriteQuote,
 }: {
+  userId: string;
   tasks: Task[];
   projects: Project[];
   focusSessions: FocusSession[];
@@ -207,6 +210,16 @@ export function InsightsPage({
           onCustomEndChange={setCustomEnd}
         />
       </section>
+
+      <ReportingDashboard
+        userId={userId}
+        tasks={tasks}
+        projects={projects}
+        focusSessions={focusSessions}
+        dailyPlans={plansForAnalytics}
+        tagCounts={tagCounts}
+        todayDateId={todayDateId}
+      />
 
       <PerformanceSummary summary={summary} rangeLabel={analyticsRange.label} />
 

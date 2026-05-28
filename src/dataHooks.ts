@@ -234,6 +234,7 @@ function mapTaskDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
     projectId: typeof data.projectId === "string" ? data.projectId : null,
     emoji: typeof data.emoji === "string" && data.emoji ? data.emoji : null,
     icon: typeof data.icon === "string" && data.icon ? data.icon : null,
+    isDemoData: Boolean(data.isDemoData),
   };
 }
 
@@ -267,6 +268,7 @@ function mapDailyPlanDocument(id: string, data: DocumentData | undefined, userId
     reflection: normalizeReflection(planData.reflection),
     createdAt: planData.createdAt ?? null,
     updatedAt: planData.updatedAt ?? null,
+    isDemoData: Boolean(planData.isDemoData),
   };
 }
 
@@ -289,6 +291,7 @@ function mapFocusSessionDocument(snapshot: QueryDocumentSnapshot<DocumentData>):
     notes: String(data.notes ?? ""),
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
+    isDemoData: Boolean(data.isDemoData),
   };
 }
 
@@ -308,6 +311,7 @@ function mapProjectDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Proj
     completedAt: typeof data.completedAt === "string" ? data.completedAt : null,
     emoji: typeof data.emoji === "string" && data.emoji ? data.emoji : null,
     icon: typeof data.icon === "string" && data.icon ? data.icon : null,
+    isDemoData: Boolean(data.isDemoData),
   };
 }
 

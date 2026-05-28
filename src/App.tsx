@@ -984,6 +984,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         {activePage === "insights" ? (
           <InsightsPage
+            userId={user.uid}
             tasks={tasks}
             projects={projects}
             focusSessions={focusSessions}

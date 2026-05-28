@@ -13,6 +13,17 @@ export type FocusStatus = "running" | "paused" | "completed" | "cancelled";
 export type InsightSeverity = "info" | "success" | "warning" | "danger";
 export type AnalyticsRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
 export type PerformanceStatus = "Strong" | "Healthy" | "Needs attention" | "Neglected" | "Stuck";
+export type ReportingRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
+export type ReportingViewMode = "daily" | "weekly" | "monthly" | "yearly";
+export type ReportingType =
+  | "focus-minutes"
+  | "completed-tasks"
+  | "planned-vs-completed"
+  | "priority-completion"
+  | "project-comparison"
+  | "area-comparison"
+  | "tag-performance";
+export type ReportingTaskStatus = "all" | "open" | "today" | "upcoming" | "completed" | "archived" | "overdue";
 export type QuoteCategory =
   | "discipline"
   | "focus"
@@ -42,6 +53,7 @@ export type Task = {
   projectId: string | null;
   emoji: string | null;
   icon: string | null;
+  isDemoData?: boolean;
 };
 
 export type TaskFormValues = {
@@ -73,6 +85,7 @@ export type Project = {
   completedAt: string | null;
   emoji: string | null;
   icon: string | null;
+  isDemoData?: boolean;
 };
 
 export type ProjectFormValues = {
@@ -156,6 +169,7 @@ export type DailyPlan = {
   reflection: DailyReflection;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
+  isDemoData?: boolean;
 };
 
 export type TimeBlockFormValues = {
@@ -193,6 +207,7 @@ export type FocusSession = {
   notes: string;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
+  isDemoData?: boolean;
 };
 
 export type FocusStats = {
@@ -319,4 +334,80 @@ export type FavoriteQuote = {
   userId: string;
   quoteId: string;
   createdAt: Timestamp | null;
+};
+
+export type ReportingFilters = {
+  range: ReportingRange;
+  viewMode: ReportingViewMode;
+  reportType: ReportingType;
+  projectId: string | "all" | "uncategorized";
+  area: ProjectArea | "all" | "Uncategorized";
+  tag: string | "all";
+  priority: TaskPriority | "all";
+  taskStatus: ReportingTaskStatus;
+  focusMode: FocusMode | "all";
+  includeDemoData: boolean;
+  customStart: string;
+  customEnd: string;
+};
+
+export type ReportingBucket = {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+};
+
+export type ReportingSeries = {
+  key: string;
+  label: string;
+  color: string;
+};
+
+export type ReportingMetric = {
+  label: string;
+  value: string;
+  detail: string;
+};
+
+export type ReportingTableColumn = {
+  key: string;
+  label: string;
+};
+
+export type ReportingTableRow = Record<string, string | number>;
+
+export type ReportingExplanation = {
+  title: string;
+  message: string;
+};
+
+export type ReportingRecommendation = {
+  id: string;
+  title: string;
+  message: string;
+  severity: InsightSeverity;
+  action: string;
+};
+
+export type ReportingDataset = {
+  title: string;
+  subtitle: string;
+  chartData: ReportingTableRow[];
+  series: ReportingSeries[];
+  metrics: ReportingMetric[];
+  columns: ReportingTableColumn[];
+  rows: ReportingTableRow[];
+  explanation: ReportingExplanation;
+  recommendations: ReportingRecommendation[];
+  emptyTitle: string;
+  emptyMessage: string;
+  summary: string;
+};
+
+export type DemoSeedResult = {
+  projects: number;
+  tasks: number;
+  focusSessions: number;
+  dailyPlans: number;
 };
