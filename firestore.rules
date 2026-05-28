@@ -67,6 +67,19 @@ service cloud.firestore {
           && request.resource.data.id == sessionId;
       }
 
+      match /favoriteQuotes/{quoteId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.id == quoteId
+          && request.resource.data.quoteId == quoteId;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid
+          && request.resource.data.id == quoteId
+          && request.resource.data.quoteId == quoteId;
+      }
+
       match /settings/{settingId} {
         allow read, create, update, delete: if ownsUserSpace(uid) && settingId == "main";
       }

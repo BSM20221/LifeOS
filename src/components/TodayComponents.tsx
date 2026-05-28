@@ -6,6 +6,7 @@ import type {
   DailyReflection,
   EnergyLevel,
   FocusStats,
+  InsightMessage,
   MoodLevel,
   Project,
   Task,
@@ -15,8 +16,10 @@ import type {
   TodayStats,
 } from "../types";
 import { formatMinutes, labelTimeBlockType, sortTimeBlocks, validateTimeBlock } from "../todayUtils";
+import { displayWithEmoji } from "../emojiPresets";
 import { titleCase } from "../utils";
 import { EmptyState, StatusBanner } from "./Common";
+import { InsightMessageList } from "./InsightsComponents";
 import { QuickCapture } from "./TaskComponents";
 import { TagChip } from "./TaskBrowseComponents";
 
@@ -30,6 +33,7 @@ export function TodayPage({
   projects,
   stats,
   focusStats,
+  insightMessages,
   onQuickCreate,
   onAddTopTask,
   onRemoveTopTask,
@@ -54,6 +58,7 @@ export function TodayPage({
   projects: Project[];
   stats: TodayStats;
   focusStats: FocusStats;
+  insightMessages: InsightMessage[];
   onQuickCreate: (value: string) => Promise<void>;
   onAddTopTask: (taskId: string) => void;
   onRemoveTopTask: (taskId: string) => void;
@@ -141,6 +146,16 @@ export function TodayPage({
         onDeleteTimeBlock={onDeleteTimeBlock}
         onToggleTimeBlock={onToggleTimeBlock}
       />
+
+      <article className="panel today-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Today insights</p>
+            <h3>Practical signals</h3>
+          </div>
+        </div>
+        <InsightMessageList messages={insightMessages.slice(0, 3)} />
+      </article>
 
       <DailyReflectionForm reflection={plan.reflection} onSave={onSaveReflection} />
     </section>
@@ -241,7 +256,7 @@ export function TopThreePlanner({
             <option value="">Choose a task</option>
             {selectableTasks.map((task) => (
               <option key={task.id} value={task.id}>
-                {task.title}
+                {displayWithEmoji(task.title, task.emoji)}
               </option>
             ))}
           </select>
@@ -309,7 +324,7 @@ export function DeepWorkCard({
             <option value="">Choose a task</option>
             {candidateTasks.map((candidateTask) => (
               <option key={candidateTask.id} value={candidateTask.id}>
-                {candidateTask.title}
+                {displayWithEmoji(candidateTask.title, candidateTask.emoji)}
               </option>
             ))}
           </select>
@@ -388,9 +403,9 @@ export function TimeBlockList({
                 {block.startTime} - {block.endTime}
               </time>
               <div>
-                <strong>{block.title || task?.title || "Untitled block"}</strong>
+                <strong>{block.title || (task ? displayWithEmoji(task.title, task.emoji) : "") || "Untitled block"}</strong>
                 <span className={`time-block-type ${block.type}`}>{labelTimeBlockType(block.type)}</span>
-                {task ? <small>Task: {task.title}</small> : null}
+                {task ? <small>Task: {displayWithEmoji(task.title, task.emoji)}</small> : null}
                 {block.notes ? <p>{block.notes}</p> : null}
               </div>
               <div className="time-block-actions">
@@ -466,7 +481,7 @@ export function TimeBlockForm({
             <option value="">No task</option>
             {tasks.map((task) => (
               <option key={task.id} value={task.id}>
-                {task.title}
+                {displayWithEmoji(task.title, task.emoji)}
               </option>
             ))}
           </select>
@@ -663,11 +678,11 @@ function TaskPriorityCard({
   return (
     <section className="planner-task-card">
       <div className="planner-task-main">
-        <strong>{task.title}</strong>
+        <strong>{displayWithEmoji(task.title, task.emoji)}</strong>
         <div className="task-meta">
           {project ? (
             <em className="project-badge" style={{ "--project-color": project.color } as CSSProperties}>
-              {project.name}
+              {displayWithEmoji(project.name, project.emoji)}
             </em>
           ) : null}
           <em className={`priority ${task.priority}`}>{task.priority}</em>

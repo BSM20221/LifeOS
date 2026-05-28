@@ -10,7 +10,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { DailyPlan, FocusSession, Project, ProjectStats, SavedFilter, Task } from "./types";
+import type { DailyPlan, FavoriteQuote, FocusSession, Project, ProjectStats, SavedFilter, Task } from "./types";
 import { isFilterCriteria, normalizeTags } from "./filterUtils";
 import { getFriendlyError, isEnergyLevel, isProjectArea, isProjectStatus, isTaskPriority, isTaskStatus } from "./utils";
 import { createEmptyDailyPlan, normalizeReflection, normalizeTimeBlock } from "./todayUtils";
@@ -148,6 +148,32 @@ export function useUserFocusSessions(user: User) {
   return { sessions, loading, error };
 }
 
+export function useUserFavoriteQuotes(user: User) {
+  const [favorites, setFavorites] = useState<FavoriteQuote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+
+    const favoriteQuery = query(collection(db, "users", user.uid, "favoriteQuotes"), orderBy("createdAt", "desc"));
+    return onSnapshot(
+      favoriteQuery,
+      (snapshot) => {
+        setFavorites(snapshot.docs.map(mapFavoriteQuoteDocument));
+        setLoading(false);
+      },
+      (snapshotError) => {
+        setError(getFriendlyError(snapshotError));
+        setLoading(false);
+      }
+    );
+  }, [user.uid]);
+
+  return { favorites, loading, error };
+}
+
 export function getProjectStats(projectId: string, tasks: Task[]): ProjectStats {
   const projectTasks = tasks.filter((task) => task.projectId === projectId && task.status !== "archived");
   const completedTasks = projectTasks.filter((task) => task.status === "done").length;
@@ -180,6 +206,8 @@ function mapTaskDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
     notes: String(data.notes ?? ""),
     userId: String(data.userId ?? ""),
     projectId: typeof data.projectId === "string" ? data.projectId : null,
+    emoji: typeof data.emoji === "string" && data.emoji ? data.emoji : null,
+    icon: typeof data.icon === "string" && data.icon ? data.icon : null,
   };
 }
 
@@ -252,5 +280,17 @@ function mapProjectDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Proj
     updatedAt: data.updatedAt ?? null,
     archivedAt: typeof data.archivedAt === "string" ? data.archivedAt : null,
     completedAt: typeof data.completedAt === "string" ? data.completedAt : null,
+    emoji: typeof data.emoji === "string" && data.emoji ? data.emoji : null,
+    icon: typeof data.icon === "string" && data.icon ? data.icon : null,
+  };
+}
+
+function mapFavoriteQuoteDocument(snapshot: QueryDocumentSnapshot<DocumentData>): FavoriteQuote {
+  const data = snapshot.data();
+  return {
+    id: typeof data.id === "string" ? data.id : snapshot.id,
+    userId: String(data.userId ?? ""),
+    quoteId: String(data.quoteId ?? snapshot.id),
+    createdAt: data.createdAt ?? null,
   };
 }

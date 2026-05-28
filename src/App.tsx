@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   CalendarClock,
   Check,
   CheckCircle2,
@@ -19,11 +20,12 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
 import { starterProjects } from "./constants";
-import { getProjectStats, useDailyPlan, useUserFocusSessions, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
+import { getProjectStats, useDailyPlan, useUserFavoriteQuotes, useUserFocusSessions, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
 import { parseQuickCapture } from "./taskParser";
 import type {
   DailyPlan,
   DailyReflection,
+  ConfirmDialogState,
   FilterCriteria,
   FocusMode,
   FocusSession,
@@ -42,16 +44,22 @@ import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCo
 import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
 import { calculateTodayStats, formatMinutes, getTodayDateId } from "./todayUtils";
 import { calculateElapsedSeconds, createFocusSessionPayload, getTodayFocusStats, secondsToStoredMinutes } from "./focusUtils";
+import { generateInsightMessages } from "./insightsUtils";
+import { displayWithEmoji } from "./emojiPresets";
+import { getDailyQuote, getRandomQuote } from "./quotes";
 import { AuthScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { FocusPage } from "./components/FocusComponents";
+import { InsightsPage, InsightMessageList } from "./components/InsightsComponents";
+import { ConfirmDialog } from "./components/ModalComponents";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
+import { DailyQuoteCard } from "./components/QuoteComponents";
 import { SavedViewForm, SavedViewsPage } from "./components/SavedViewsComponents";
 import { QuickCapture, TaskEditor, TaskSection } from "./components/TaskComponents";
 import { TagList } from "./components/TaskBrowseComponents";
 import { TodayPage } from "./components/TodayComponents";
 
-type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "settings";
+type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "insights" | "settings";
 
 type NavItem = {
   id: PageId;
@@ -81,6 +89,7 @@ const navItems: NavItem[] = [
   { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "saved-views", label: "Saved Views", icon: ListFilter },
   { id: "focus", label: "Focus", icon: Timer },
+  { id: "insights", label: "Insights", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -115,6 +124,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [selectedSavedFilterId, setSelectedSavedFilterId] = useState<string | null>(null);
   const [selectedFocusTaskId, setSelectedFocusTaskId] = useState<string | null>(null);
   const [taskFilters, setTaskFilters] = useState<FilterCriteria>({});
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [quoteOffset, setQuoteOffset] = useState(0);
   const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -125,11 +137,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const savedFilterState = useUserSavedFilters(user);
   const dailyPlanState = useDailyPlan(user, todayDateId);
   const focusSessionState = useUserFocusSessions(user);
+  const favoriteQuoteState = useUserFavoriteQuotes(user);
   const { tasks } = taskState;
   const { projects } = projectState;
   const { filters: savedFilters } = savedFilterState;
   const { sessions: focusSessions } = focusSessionState;
+  const { favorites: favoriteQuotes } = favoriteQuoteState;
   const dailyPlan = dailyPlanState.plan;
+  const dailyQuote = useMemo(() => getDailyQuote(todayDateId, quoteOffset), [quoteOffset, todayDateId]);
 
   useEffect(() => {
     const handleHashChange = () => setActivePage(getPageFromHash());
@@ -171,6 +186,19 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
   const todayStats = useMemo(() => calculateTodayStats(tasks, dailyPlan, todayDateId), [dailyPlan, tasks, todayDateId]);
   const todayFocusStats = useMemo(() => getTodayFocusStats(focusSessions, todayDateId), [focusSessions, todayDateId]);
+  const insightMessages = useMemo(
+    () =>
+      generateInsightMessages({
+        tasks,
+        projects,
+        sessions: focusSessions,
+        dailyPlan,
+        tagCounts,
+        todayDateId,
+      }),
+    [dailyPlan, focusSessions, projects, tagCounts, tasks, todayDateId]
+  );
+  const isDailyQuoteFavorite = favoriteQuotes.some((favorite) => favorite.quoteId === dailyQuote.id);
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
   const nextTask = openTasks.find((task) => task.priority === "urgent" || task.priority === "high") ?? todayTasks[0] ?? openTasks[0] ?? null;
   const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? "Dashboard";
@@ -210,6 +238,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
       notes: "",
       userId: user.uid,
       projectId: parsed.projectId,
+      emoji: null,
+      icon: null,
     });
 
     if (parsed.unresolvedProjectName) {
@@ -260,12 +290,41 @@ function ProtectedLifeOS({ user }: { user: User }) {
     });
   }
 
-  async function deleteTask(task: Task) {
-    if (!window.confirm(`Delete "${task.title}"? This cannot be undone.`)) {
+  function requestConfirmation(dialog: ConfirmDialogState) {
+    setConfirmDialog(dialog);
+  }
+
+  async function handleConfirmDialog() {
+    if (!confirmDialog) {
       return;
     }
 
-    await deleteDoc(doc(db, "users", user.uid, "tasks", task.id));
+    setConfirmBusy(true);
+    try {
+      await confirmDialog.onConfirm();
+      setConfirmDialog(null);
+    } catch (error) {
+      setActionError(getFriendlyError(error));
+    } finally {
+      setConfirmBusy(false);
+    }
+  }
+
+  function closeConfirmDialog() {
+    if (!confirmBusy) {
+      setConfirmDialog(null);
+    }
+  }
+
+  function deleteTask(task: Task) {
+    requestConfirmation({
+      title: "Delete task",
+      description: `Delete "${displayWithEmoji(task.title, task.emoji)}"? This cannot be undone.`,
+      confirmLabel: "Delete task",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: () => runAction(() => deleteDoc(doc(db, "users", user.uid, "tasks", task.id)), "Task deleted."),
+    });
   }
 
   async function saveDailyPlanPatch(updates: Partial<Pick<DailyPlan, "topTaskIds" | "deepWorkTaskId" | "timeBlocks" | "reflection">>) {
@@ -328,11 +387,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   function deleteTimeBlock(block: TimeBlock) {
-    if (!window.confirm(`Delete time block "${block.title || block.startTime}"?`)) {
-      return;
-    }
-
-    void runAction(() => saveDailyPlanPatch({ timeBlocks: dailyPlan.timeBlocks.filter((item) => item.id !== block.id) }), "Time block deleted.");
+    requestConfirmation({
+      title: "Delete time block",
+      description: `Delete time block "${block.title || block.startTime}"?`,
+      confirmLabel: "Delete block",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: () => runAction(() => saveDailyPlanPatch({ timeBlocks: dailyPlan.timeBlocks.filter((item) => item.id !== block.id) }), "Time block deleted."),
+    });
   }
 
   function toggleTimeBlock(block: TimeBlock) {
@@ -413,22 +475,27 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   function cancelFocusSession(session: FocusSession) {
-    if (!window.confirm("Cancel this focus session? The elapsed time will be saved as cancelled.")) {
-      return;
-    }
-
-    const elapsedSeconds = calculateElapsedSeconds(session);
-    void runAction(
-      () =>
-        updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
-          status: "cancelled",
-          actualMinutes: secondsToStoredMinutes(elapsedSeconds),
-          cancelledAt: getNowISOString(),
-          updatedAt: serverTimestamp(),
-          userId: user.uid,
-        }),
-      "Focus session cancelled."
-    );
+    requestConfirmation({
+      title: "Cancel focus session",
+      description: "Cancel this focus session? The elapsed time will be saved as cancelled.",
+      confirmLabel: "Cancel session",
+      cancelLabel: "Keep session",
+      variant: "destructive",
+      onConfirm: () => {
+        const elapsedSeconds = calculateElapsedSeconds(session);
+        return runAction(
+          () =>
+            updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
+              status: "cancelled",
+              actualMinutes: secondsToStoredMinutes(elapsedSeconds),
+              cancelledAt: getNowISOString(),
+              updatedAt: serverTimestamp(),
+              userId: user.uid,
+            }),
+          "Focus session cancelled."
+        );
+      },
+    });
   }
 
   function completeFocusSession(session: FocusSession) {
@@ -447,11 +514,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   function deleteFocusSession(session: FocusSession) {
-    if (!window.confirm("Delete this focus session? This cannot be undone.")) {
-      return;
-    }
-
-    void runAction(() => deleteDoc(doc(db, "users", user.uid, "focusSessions", session.id)), "Focus session deleted.");
+    requestConfirmation({
+      title: "Delete focus session",
+      description: "Delete this focus session? This cannot be undone.",
+      confirmLabel: "Delete session",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: () => runAction(() => deleteDoc(doc(db, "users", user.uid, "focusSessions", session.id)), "Focus session deleted."),
+    });
   }
 
   async function saveFocusSessionNotes(session: FocusSession, notes: string) {
@@ -482,6 +552,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
       area: values.area,
       archivedAt: values.status === "archived" ? project?.archivedAt ?? now : null,
       completedAt: values.status === "completed" ? project?.completedAt ?? now : null,
+      emoji: values.emoji || null,
+      icon: values.icon || null,
     };
 
     if (project) {
@@ -532,6 +604,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
           updatedAt: serverTimestamp(),
           archivedAt: null,
           completedAt: null,
+          emoji: starterProject.emoji ?? null,
+          icon: null,
         });
       });
       await batch.commit();
@@ -548,26 +622,54 @@ function ProtectedLifeOS({ user }: { user: User }) {
     });
   }
 
-  async function deleteProject(project: Project) {
-    const assignedTasks = tasks.filter((task) => task.projectId === project.id);
-    const confirmed = window.confirm(
-      `Permanently delete "${project.name}"? This will remove the project and unassign ${assignedTasks.length} task(s). This cannot be undone.`
-    );
-    if (!confirmed) {
+  function deleteProject(project: Project) {
+    requestConfirmation({
+      title: "Delete project",
+      description: `Permanently delete "${displayWithEmoji(project.name, project.emoji)}"? This will remove the project and unassign ${tasks.filter((task) => task.projectId === project.id).length} task(s). This cannot be undone.`,
+      confirmLabel: "Delete project",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: async () => {
+        const assignedTasks = tasks.filter((task) => task.projectId === project.id);
+        const batch = writeBatch(db);
+        assignedTasks.forEach((task) => {
+          batch.update(doc(db, "users", user.uid, "tasks", task.id), {
+            projectId: null,
+            updatedAt: serverTimestamp(),
+            userId: user.uid,
+          });
+        });
+        batch.delete(doc(db, "users", user.uid, "projects", project.id));
+        await batch.commit();
+        setSelectedProjectId(null);
+        setActionMessage("Project deleted. Assigned tasks were unassigned.");
+      },
+    });
+  }
+
+  function toggleFavoriteQuote() {
+    const quoteRef = doc(db, "users", user.uid, "favoriteQuotes", dailyQuote.id);
+    if (isDailyQuoteFavorite) {
+      void runAction(() => deleteDoc(quoteRef), "Quote removed from favorites.");
       return;
     }
 
-    const batch = writeBatch(db);
-    assignedTasks.forEach((task) => {
-      batch.update(doc(db, "users", user.uid, "tasks", task.id), {
-        projectId: null,
-        updatedAt: serverTimestamp(),
-        userId: user.uid,
-      });
-    });
-    batch.delete(doc(db, "users", user.uid, "projects", project.id));
-    await batch.commit();
-    setSelectedProjectId(null);
+    void runAction(
+      () =>
+        setDoc(quoteRef, {
+          id: dailyQuote.id,
+          userId: user.uid,
+          quoteId: dailyQuote.id,
+          createdAt: serverTimestamp(),
+        }),
+      "Quote saved to favorites."
+    );
+  }
+
+  function refreshQuote() {
+    const nextQuote = getRandomQuote(dailyQuote.id);
+    const nextIndex = Math.max(0, nextQuote ? quoteOffset + 1 : quoteOffset + 1);
+    setQuoteOffset(nextIndex);
   }
 
   async function saveSavedFilter(values: SavedFilterFormValues, filter: SavedFilter | null) {
@@ -617,15 +719,21 @@ function ProtectedLifeOS({ user }: { user: User }) {
     await runAction(() => saveSavedFilter(values, null), "Suggested saved view created.");
   }
 
-  async function deleteSavedFilter(filter: SavedFilter) {
-    if (!window.confirm(`Delete saved view "${filter.name}"? This cannot be undone.`)) {
-      return;
-    }
-
-    await deleteDoc(doc(db, "users", user.uid, "filters", filter.id));
-    if (selectedSavedFilterId === filter.id) {
-      setSelectedSavedFilterId(null);
-    }
+  function deleteSavedFilter(filter: SavedFilter) {
+    requestConfirmation({
+      title: "Delete saved view",
+      description: `Delete saved view "${filter.name}"? This cannot be undone.`,
+      confirmLabel: "Delete view",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: async () => {
+        await deleteDoc(doc(db, "users", user.uid, "filters", filter.id));
+        if (selectedSavedFilterId === filter.id) {
+          setSelectedSavedFilterId(null);
+        }
+        setActionMessage("Saved view deleted.");
+      },
+    });
   }
 
   function applyTagFilter(tag: string) {
@@ -721,6 +829,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {savedFilterState.error ? <StatusBanner tone="error" message={savedFilterState.error} /> : null}
         {dailyPlanState.error ? <StatusBanner tone="error" message={dailyPlanState.error} /> : null}
         {focusSessionState.error ? <StatusBanner tone="error" message={focusSessionState.error} /> : null}
+        {favoriteQuoteState.error ? <StatusBanner tone="error" message={favoriteQuoteState.error} /> : null}
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -740,8 +849,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
             dailyPlan={dailyPlan}
             todayStats={todayStats}
             focusStats={todayFocusStats}
+            insightMessages={insightMessages}
+            quote={dailyQuote}
+            quoteFavorite={isDailyQuoteFavorite}
             onQuickCreate={(value) => createTaskFromQuick(value, "inbox")}
             onOpenFocusTask={openFocusForTask}
+            onOpenInsights={() => {
+              window.location.hash = "insights";
+            }}
+            onRefreshQuote={refreshQuote}
+            onToggleFavoriteQuote={toggleFavoriteQuote}
             onOpenSavedFilter={(filter) => {
               setSelectedSavedFilterId(filter.id);
               window.location.hash = "saved-views";
@@ -762,6 +879,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             projects={projects}
             stats={todayStats}
             focusStats={todayFocusStats}
+            insightMessages={insightMessages}
             onQuickCreate={(value) => createTaskFromQuick(value, "today")}
             onAddTopTask={addTopTask}
             onRemoveTopTask={removeTopTask}
@@ -802,6 +920,22 @@ function ProtectedLifeOS({ user }: { user: User }) {
           />
         ) : null}
 
+        {activePage === "insights" ? (
+          <InsightsPage
+            tasks={tasks}
+            projects={projects}
+            focusSessions={focusSessions}
+            dailyPlan={dailyPlan}
+            tagCounts={tagCounts}
+            todayDateId={todayDateId}
+            messages={insightMessages}
+            quote={dailyQuote}
+            quoteFavorite={isDailyQuoteFavorite}
+            onRefreshQuote={refreshQuote}
+            onToggleFavoriteQuote={toggleFavoriteQuote}
+          />
+        ) : null}
+
         {activePage === "projects" ? (
           <ProjectsPage
             projects={projects}
@@ -833,7 +967,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onReactivateProject={(project) =>
               void runAction(() => updateProject(project, { status: "active", completedAt: null, archivedAt: null }), "Project reactivated.")
             }
-            onDeleteProject={(project) => void runAction(() => deleteProject(project), "Project deleted. Assigned tasks were unassigned.")}
+            onDeleteProject={deleteProject}
           />
         ) : null}
 
@@ -849,11 +983,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onCreateFilter={() => setSavedFilterEditor({ filter: null })}
             onCreateSuggestedFilter={(values) => void createSuggestedSavedFilter(values)}
             onEditFilter={(filter) => setSavedFilterEditor({ filter })}
-            onDeleteFilter={(filter) => void runAction(() => deleteSavedFilter(filter), "Saved view deleted.")}
+            onDeleteFilter={deleteSavedFilter}
             onSelectTag={applyTagFilter}
             taskActions={{
               onEdit: (task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId }),
-              onDelete: (task) => void runAction(() => deleteTask(task), "Task deleted."),
+              onDelete: deleteTask,
               onMarkDone: (task) => void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done."),
               onUndoDone: (task) => void runAction(() => updateTask(task, { status: "today", completedAt: null }), "Task moved back to Today."),
               onArchive: (task) => void runAction(() => updateTask(task, { status: "archived" }), "Task archived."),
@@ -877,7 +1011,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} savedFilters={savedFilters} tagCount={tagCounts.length} /> : null}
 
-        {activePage !== "projects" && activePage !== "saved-views" && activePage !== "today" && activePage !== "focus" ? (
+        {activePage !== "projects" && activePage !== "saved-views" && activePage !== "today" && activePage !== "focus" && activePage !== "insights" ? (
           <TaskSection
             loading={taskState.loading}
             page={activePage}
@@ -889,7 +1023,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onClearFilters={() => setTaskFilters({})}
             onSelectTag={(tag) => setTaskFilters((current) => ({ ...current, tag }))}
             onEdit={(task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId })}
-            onDelete={(task) => void runAction(() => deleteTask(task), "Task deleted.")}
+            onDelete={deleteTask}
             onMarkDone={(task) =>
               void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.")
             }
@@ -935,6 +1069,10 @@ function ProtectedLifeOS({ user }: { user: User }) {
           onSave={(values) => saveSavedFilter(values, savedFilterEditor.filter)}
         />
       ) : null}
+
+      {confirmDialog ? (
+        <ConfirmDialog dialog={confirmDialog} busy={confirmBusy} onCancel={closeConfirmDialog} onConfirm={() => void handleConfirmDialog()} />
+      ) : null}
     </main>
   );
 
@@ -955,8 +1093,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
     dailyPlan,
     todayStats,
     focusStats,
+    insightMessages,
+    quote,
+    quoteFavorite,
     onQuickCreate,
     onOpenFocusTask,
+    onOpenInsights,
+    onRefreshQuote,
+    onToggleFavoriteQuote,
     onOpenSavedFilter,
     onSelectTag,
     onApplyTaskSignal,
@@ -977,8 +1121,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
     dailyPlan: DailyPlan;
     todayStats: ReturnType<typeof calculateTodayStats>;
     focusStats: ReturnType<typeof getTodayFocusStats>;
+    insightMessages: ReturnType<typeof generateInsightMessages>;
+    quote: typeof dailyQuote;
+    quoteFavorite: boolean;
     onQuickCreate: (value: string) => Promise<void>;
     onOpenFocusTask: (task: Task) => void;
+    onOpenInsights: () => void;
+    onRefreshQuote: () => void;
+    onToggleFavoriteQuote: () => void;
     onOpenSavedFilter: (filter: SavedFilter) => void;
     onSelectTag: (tag: string) => void;
     onApplyTaskSignal: (criteria: FilterCriteria, message: string) => void;
@@ -999,10 +1149,10 @@ function ProtectedLifeOS({ user }: { user: User }) {
         <section className="hero-band">
           <div className="hero-copy">
             <p className="eyebrow">Next best action</p>
-            <h3>{nextTask?.title ?? "Capture the first task"}</h3>
+            <h3>{nextTask ? displayWithEmoji(nextTask.title, nextTask.emoji) : "Capture the first task"}</h3>
             <p>
               {nextTask
-                ? `${projectById.get(nextTask.projectId ?? "")?.name ?? "No project"} - ${nextTask.priority} priority.`
+                ? `${displayWithEmoji(projectById.get(nextTask.projectId ?? "")?.name ?? "No project", projectById.get(nextTask.projectId ?? "")?.emoji)} - ${nextTask.priority} priority.`
                 : "Your Firestore task list is empty. Add one below or create starter projects."}
             </p>
             <QuickCapture label="Quick capture" onCreate={onQuickCreate} />
@@ -1047,9 +1197,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
             <div className="dashboard-mini-list">
               {topPreviewTasks.length === 0 ? <span className="muted-line">No Top 3 selected yet.</span> : null}
               {topPreviewTasks.map((task) => (
-                <span key={task.id}>{task.title}</span>
+                <span key={task.id}>{displayWithEmoji(task.title, task.emoji)}</span>
               ))}
-              {deepWorkTask ? <em>Deep Work: {deepWorkTask.title}</em> : <em>No Deep Work task selected.</em>}
+              {deepWorkTask ? <em>Deep Work: {displayWithEmoji(deepWorkTask.title, deepWorkTask.emoji)}</em> : <em>No Deep Work task selected.</em>}
             </div>
             {deepWorkTask ? (
               <button className="secondary-button" type="button" onClick={() => onOpenFocusTask(deepWorkTask)}>
@@ -1057,6 +1207,22 @@ function ProtectedLifeOS({ user }: { user: User }) {
                 Start focus
               </button>
             ) : null}
+          </article>
+
+          <DailyQuoteCard quote={quote} favorite={quoteFavorite} onRefresh={onRefreshQuote} onToggleFavorite={onToggleFavoriteQuote} />
+
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Insights</p>
+                <h3>Pattern notes</h3>
+              </div>
+              <button className="secondary-button" type="button" onClick={onOpenInsights}>
+                <BarChart3 size={17} />
+                Insights
+              </button>
+            </div>
+            <InsightMessageList messages={insightMessages.slice(0, 3)} />
           </article>
 
           <article className="panel">
@@ -1191,7 +1357,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
       >
         <span className="project-color-dot" />
         <span>
-          <strong>{project.name}</strong>
+          <strong>{displayWithEmoji(project.name, project.emoji)}</strong>
           <small>{showDate ? formatProjectDate(project.updatedAt) : `${safeStats.openTasks} open / ${safeStats.completedTasks} done`}</small>
         </span>
         <em>{safeStats.progress}%</em>
@@ -1304,6 +1470,8 @@ function normalizeTaskForm(values: TaskFormValues) {
     energyLevel: values.energyLevel,
     notes: values.notes.trim(),
     projectId: values.projectId || null,
+    emoji: values.emoji || null,
+    icon: values.icon || null,
   };
 }
 
@@ -1328,6 +1496,8 @@ function getPageHeadline(page: PageId) {
       return "Keep future commitments visible without crowding today.";
     case "focus":
       return "Start Pomodoro sessions, protect Deep Work, and track focused minutes.";
+    case "insights":
+      return "Notice patterns across tasks, projects, planning, and focus.";
     case "settings":
       return "Confirm account, Firebase, and archived task state.";
   }

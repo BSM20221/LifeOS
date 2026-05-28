@@ -16,36 +16,42 @@ export const starterProjects = [
     description: "Vocabulary, grammar practice, exam preparation, and speaking drills.",
     color: "#2a5f48",
     area: "Study",
+    emoji: "📚",
   },
   {
     name: "Full Stack Development",
     description: "Frontend, backend, Firebase, deployment, and portfolio work.",
     color: "#334963",
     area: "Study",
+    emoji: "💻",
   },
   {
     name: "UoPeople",
     description: "Coursework, discussion posts, assignments, and academic planning.",
     color: "#8a4a38",
     area: "Study",
+    emoji: "🎓",
   },
   {
     name: "SEO / Client Work",
     description: "Client deliverables, keyword research, audits, and reporting.",
     color: "#6d4814",
     area: "Client Work",
+    emoji: "📈",
   },
   {
     name: "Business Ideas",
     description: "Opportunity research, experiments, offers, and launch tasks.",
     color: "#7d241d",
     area: "Business",
+    emoji: "💰",
   },
   {
     name: "Health & Discipline",
     description: "Training, routines, sleep, nutrition, and personal discipline.",
     color: "#28533f",
     area: "Health",
+    emoji: "🏋️",
   },
 ] as const;
 

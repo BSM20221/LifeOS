@@ -7,6 +7,7 @@ import {
   formatTimerSeconds,
   getFocusModeLabel,
 } from "../focusUtils";
+import { displayWithEmoji } from "../emojiPresets";
 import { formatMinutes } from "../todayUtils";
 import { getFriendlyError } from "../utils";
 import { EmptyState, StatusBanner } from "./Common";
@@ -146,7 +147,7 @@ export function FocusPage({
                   .filter((task) => task.status !== "archived")
                   .map((task) => (
                     <option key={task.id} value={task.id}>
-                      {task.title}
+                      {displayWithEmoji(task.title, task.emoji)}
                     </option>
                   ))}
               </select>
@@ -345,7 +346,7 @@ export function FocusStats({
           return (
             <span key={projectId}>
               <em className="project-badge" style={{ "--project-color": project?.color ?? "#59635d" } as CSSProperties}>
-                {project?.name ?? "Unknown project"}
+                {project ? displayWithEmoji(project.name, project.emoji) : "Unknown project"}
               </em>
               <strong>{formatMinutes(minutes)}</strong>
             </span>
@@ -358,7 +359,7 @@ export function FocusStats({
         {taskRows.length === 0 ? <span className="muted-line">No task focus yet.</span> : null}
         {taskRows.map(([taskId, minutes]) => (
           <span key={taskId}>
-            <small>{taskById.get(taskId)?.title ?? "Deleted task"}</small>
+            <small>{displayWithEmoji(taskById.get(taskId)?.title ?? "Deleted task", taskById.get(taskId)?.emoji)}</small>
             <strong>{formatMinutes(minutes)}</strong>
           </span>
         ))}
@@ -451,11 +452,11 @@ export function FocusSessionCard({
   return (
     <section className={`focus-session-card ${session.status}`}>
       <div className="focus-session-main">
-        <strong>{task?.title ?? "Unlinked focus session"}</strong>
+        <strong>{task ? displayWithEmoji(task.title, task.emoji) : "Unlinked focus session"}</strong>
         <div className="task-meta">
           {project ? (
             <em className="project-badge" style={{ "--project-color": project.color } as CSSProperties}>
-              {project.name}
+              {displayWithEmoji(project.name, project.emoji)}
             </em>
           ) : null}
           <span>{getFocusModeLabel(session.mode)}</span>
@@ -542,11 +543,11 @@ function SelectedFocusTask({ task, project }: { task: Task; project: Project | n
     <section className="selected-focus-task">
       <Clock3 size={18} />
       <div>
-        <strong>{task.title}</strong>
+        <strong>{displayWithEmoji(task.title, task.emoji)}</strong>
         <div className="task-meta">
           {project ? (
             <em className="project-badge" style={{ "--project-color": project.color } as CSSProperties}>
-              {project.name}
+              {displayWithEmoji(project.name, project.emoji)}
             </em>
           ) : null}
           <em className={`priority ${task.priority}`}>{task.priority}</em>

@@ -6,6 +6,8 @@ import { getFriendlyError, titleCase } from "../utils";
 import { EmptyState, StatusBanner } from "./Common";
 import { normalizeTags } from "../filterUtils";
 import { TagChip, TaskFilters } from "./TaskBrowseComponents";
+import { EmojiPicker } from "./EmojiPicker";
+import { displayWithEmoji } from "../emojiPresets";
 
 export function QuickCapture({
   label,
@@ -155,7 +157,7 @@ export function TaskRow({
     <section className={`task-row ${task.status === "done" ? "is-done" : ""}`}>
       <header className="task-card-header">
         <div className="task-title-line">
-          <strong>{task.title}</strong>
+          <strong>{displayWithEmoji(task.title, task.emoji)}</strong>
         </div>
 
         <div className="task-primary-actions" aria-label={`Primary actions for ${task.title}`}>
@@ -185,7 +187,7 @@ export function TaskRow({
           <em className={`status-pill ${task.status}`}>{task.status}</em>
           {project ? (
             <em className="project-badge" style={{ "--project-color": project.color } as CSSProperties}>
-              {project.name}
+              {displayWithEmoji(project.name, project.emoji)}
             </em>
           ) : null}
           {task.dueDate ? <span>Due {task.dueDate}</span> : null}
@@ -290,6 +292,8 @@ export function TaskEditor({
           </label>
 
           <div className="form-grid">
+            <EmojiPicker label="Task emoji" value={values.emoji} onChange={(emoji) => setValues({ ...values, emoji })} />
+
             <label>
               Status
               <select value={values.status} onChange={(event) => setValues({ ...values, status: event.target.value as TaskStatus })}>
@@ -429,6 +433,8 @@ function taskToFormValues(task: Task | null, defaultStatus: TaskStatus, defaultP
     energyLevel: task?.energyLevel ?? "medium",
     notes: task?.notes ?? "",
     projectId: task?.projectId ?? defaultProjectId ?? "",
+    emoji: task?.emoji ?? "",
+    icon: task?.icon ?? "",
   };
 }
 

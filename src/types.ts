@@ -10,6 +10,17 @@ export type TimeBlockType = "deep-work" | "study" | "admin" | "health" | "break"
 export type MoodLevel = "low" | "okay" | "good" | "great";
 export type FocusMode = "pomodoro" | "short-break" | "long-break" | "custom";
 export type FocusStatus = "running" | "paused" | "completed" | "cancelled";
+export type InsightSeverity = "info" | "success" | "warning" | "danger";
+export type QuoteCategory =
+  | "discipline"
+  | "focus"
+  | "learning"
+  | "patience"
+  | "courage"
+  | "wisdom"
+  | "resilience"
+  | "humility"
+  | "ambition";
 
 export type Task = {
   id: string;
@@ -27,6 +38,8 @@ export type Task = {
   notes: string;
   userId: string;
   projectId: string | null;
+  emoji: string | null;
+  icon: string | null;
 };
 
 export type TaskFormValues = {
@@ -40,6 +53,8 @@ export type TaskFormValues = {
   energyLevel: EnergyLevel;
   notes: string;
   projectId: string;
+  emoji: string;
+  icon: string;
 };
 
 export type Project = {
@@ -54,6 +69,8 @@ export type Project = {
   updatedAt: Timestamp | null;
   archivedAt: string | null;
   completedAt: string | null;
+  emoji: string | null;
+  icon: string | null;
 };
 
 export type ProjectFormValues = {
@@ -62,6 +79,8 @@ export type ProjectFormValues = {
   color: string;
   status: ProjectStatus;
   area: ProjectArea;
+  emoji: string;
+  icon: string;
 };
 
 export type ProjectStats = {
@@ -179,4 +198,41 @@ export type FocusStats = {
   totalFocusedMinutes: number;
   minutesByProject: Record<string, number>;
   minutesByTask: Record<string, number>;
+};
+
+export type InsightMessage = {
+  id: string;
+  title: string;
+  message: string;
+  severity: InsightSeverity;
+};
+
+export type Quote = {
+  id: string;
+  text: string;
+  author: string;
+  category: QuoteCategory;
+  context: string;
+};
+
+export type ChartDatum = {
+  label: string;
+  value: number;
+  color?: string;
+};
+
+export type ConfirmDialogState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  variant: "normal" | "destructive";
+  onConfirm: () => Promise<void> | void;
+};
+
+export type FavoriteQuote = {
+  id: string;
+  userId: string;
+  quoteId: string;
+  createdAt: Timestamp | null;
 };

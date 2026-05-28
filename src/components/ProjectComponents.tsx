@@ -4,6 +4,8 @@ import { projectAreas, projectStatuses } from "../constants";
 import type { Project, ProjectArea, ProjectFormValues, ProjectStats, ProjectStatus, Task } from "../types";
 import { formatProjectDate, getFriendlyError, titleCase } from "../utils";
 import { EmptyState, ProgressBar, StatusBanner } from "./Common";
+import { EmojiPicker } from "./EmojiPicker";
+import { displayWithEmoji } from "../emojiPresets";
 
 type ProjectStatsMap = Record<string, ProjectStats>;
 
@@ -218,7 +220,7 @@ export function ProjectCard({
     >
       <span className="project-stripe" />
       <span className="project-card-top">
-        <strong>{project.name}</strong>
+        <strong>{displayWithEmoji(project.name, project.emoji)}</strong>
         <em className={`status-pill ${project.status}`}>{project.status}</em>
       </span>
       {project.description ? <span className="project-card-description">{project.description}</span> : null}
@@ -275,7 +277,7 @@ export function ProjectDetail({
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Project detail</p>
-          <h3>{project.name}</h3>
+          <h3>{displayWithEmoji(project.name, project.emoji)}</h3>
         </div>
         <button type="button" className="icon-button task-icon-button" aria-label="Close project detail" onClick={onClose}>
           <X size={18} />
@@ -360,6 +362,8 @@ export function ProjectForm({
     color: project?.color ?? "#2a5f48",
     status: project?.status ?? "active",
     area: project?.area ?? "Study",
+    emoji: project?.emoji ?? "",
+    icon: project?.icon ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -409,6 +413,8 @@ export function ProjectForm({
           </label>
 
           <div className="form-grid">
+            <EmojiPicker label="Project emoji" value={values.emoji} onChange={(emoji) => setValues({ ...values, emoji })} />
+
             <label>
               Area
               <select value={values.area} onChange={(event) => setValues({ ...values, area: event.target.value as ProjectArea })}>
@@ -460,7 +466,7 @@ function ProjectTaskList({ title, tasks }: { title: string; tasks: Task[] }) {
       {tasks.length === 0 ? <span className="muted-line">No tasks in this group.</span> : null}
       {tasks.map((task) => (
         <div className="project-task-mini" key={task.id}>
-          <strong>{task.title}</strong>
+          <strong>{displayWithEmoji(task.title, task.emoji)}</strong>
           <span>{task.status}</span>
         </div>
       ))}
