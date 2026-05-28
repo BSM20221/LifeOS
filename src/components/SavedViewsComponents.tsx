@@ -416,4 +416,5 @@ export type SavedViewTaskActions = {
   onArchive: (task: Task) => void;
   onMoveToday: (task: Task) => void;
   onMoveUpcoming: (task: Task) => void;
+  onFocus?: (task: Task) => void;
 };

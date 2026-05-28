@@ -582,6 +582,26 @@ h1 {
   background: #eadfd3;
 }
 
+.status-pill.running {
+  color: #f8f5ec;
+  background: #2a5f48;
+}
+
+.status-pill.paused {
+  color: #6d4814;
+  background: #f8e1aa;
+}
+
+.status-pill.completed {
+  color: #28533f;
+  background: #d9eadb;
+}
+
+.status-pill.cancelled {
+  color: #7d241d;
+  background: #f4d4cc;
+}
+
 .task-primary-actions {
   display: flex;
   justify-content: flex-end;
@@ -632,6 +652,10 @@ h1 {
 .danger-button {
   color: #7d241d;
   border-color: rgba(125, 36, 29, 0.28);
+}
+
+.subtle-focus-button {
+  color: #2a5f48;
 }
 
 .empty-state {
@@ -1863,6 +1887,296 @@ button.tag-chip:hover {
   font-weight: 850;
 }
 
+.focus-page {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.focus-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.42fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.focus-timer-panel,
+.focus-stats-panel,
+.focus-session-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.focus-timer-panel {
+  background:
+    linear-gradient(180deg, rgba(42, 95, 72, 0.12), transparent 240px),
+    rgba(255, 255, 255, 0.84);
+}
+
+.focus-timer {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  min-width: 0;
+  border-radius: 8px;
+  padding: clamp(22px, 5vw, 44px);
+  color: #f8f5ec;
+  background:
+    linear-gradient(120deg, rgba(16, 27, 22, 0.97), rgba(42, 95, 72, 0.9)),
+    url("/lifeos-texture.svg");
+  background-size: cover;
+  text-align: center;
+}
+
+.focus-timer strong {
+  font-size: clamp(3.2rem, 12vw, 7rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.focus-timer small {
+  color: #dbe7df;
+  font-weight: 850;
+}
+
+.focus-status {
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #17211d;
+  background: #f5c451;
+  font-size: 0.78rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.focus-status.running {
+  color: #f8f5ec;
+  background: #2a5f48;
+}
+
+.focus-status.paused {
+  color: #17211d;
+  background: #f5c451;
+}
+
+.focus-status.idle {
+  color: #334963;
+  background: #dbe7f3;
+}
+
+.focus-progress-track {
+  width: min(520px, 100%);
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(248, 245, 236, 0.2);
+}
+
+.focus-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #f5c451;
+}
+
+.focus-setup-form {
+  display: grid;
+  gap: 14px;
+}
+
+.focus-setup-form label,
+.focus-mode-selector label,
+.focus-session-card label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #33403a;
+  font-weight: 850;
+}
+
+.focus-setup-form select,
+.focus-setup-form textarea,
+.focus-mode-selector input,
+.focus-session-card textarea {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(23, 33, 29, 0.14);
+  border-radius: 8px;
+  padding: 0 13px;
+  color: #17211d;
+  background: #fbf8f0;
+  outline: none;
+}
+
+.focus-setup-form textarea,
+.focus-session-card textarea {
+  min-height: 82px;
+  padding-top: 11px;
+  resize: vertical;
+}
+
+.focus-setup-form select:focus,
+.focus-setup-form textarea:focus,
+.focus-mode-selector input:focus,
+.focus-session-card textarea:focus {
+  border-color: #387055;
+  box-shadow: 0 0 0 3px rgba(56, 112, 85, 0.18);
+}
+
+.selected-focus-task {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+  border: 1px solid rgba(23, 33, 29, 0.1);
+  border-radius: 8px;
+  padding: 13px;
+  background: #fbf8f0;
+}
+
+.selected-focus-task > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selected-focus-task strong {
+  overflow-wrap: break-word;
+  line-height: 1.35;
+}
+
+.focus-mode-selector {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  border: 1px solid rgba(23, 33, 29, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.focus-mode-selector legend {
+  padding: 0 6px;
+  color: #33403a;
+  font-weight: 900;
+}
+
+.focus-mode-selector > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.focus-mode-selector button {
+  display: grid;
+  gap: 3px;
+  min-height: 64px;
+  border: 1px solid rgba(23, 33, 29, 0.12);
+  border-radius: 8px;
+  padding: 9px;
+  color: #33403a;
+  background: #fbf8f0;
+  font-weight: 900;
+}
+
+.focus-mode-selector button.active {
+  color: #17211d;
+  border-color: rgba(42, 95, 72, 0.4);
+  background: #d9eadb;
+}
+
+.focus-mode-selector button span {
+  color: #65706a;
+  font-size: 0.78rem;
+}
+
+.focus-actions,
+.focus-session-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.focus-stats {
+  display: grid;
+  gap: 14px;
+}
+
+.focus-stat-list {
+  display: grid;
+  gap: 8px;
+}
+
+.focus-stat-list h4 {
+  margin: 0;
+  color: #33403a;
+  font-size: 0.92rem;
+}
+
+.focus-stat-list > span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbf8f0;
+}
+
+.focus-stat-list small {
+  min-width: 0;
+  overflow: hidden;
+  color: #33403a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 850;
+}
+
+.focus-stat-list strong {
+  color: #2a5f48;
+}
+
+.focus-session-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.focus-session-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+  border: 1px solid rgba(23, 33, 29, 0.1);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbf8f0;
+}
+
+.focus-session-card.completed {
+  border-color: rgba(42, 95, 72, 0.2);
+  background: rgba(217, 234, 219, 0.32);
+}
+
+.focus-session-card.cancelled {
+  background: rgba(244, 212, 204, 0.25);
+}
+
+.focus-session-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.focus-session-main strong {
+  overflow-wrap: break-word;
+  line-height: 1.35;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1875,7 +2189,7 @@ button.tag-chip:hover {
   }
 
   .nav-list {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 
   .sync-panel {
@@ -1889,6 +2203,10 @@ button.tag-chip:hover {
   .today-hero {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .focus-layout {
+    grid-template-columns: 1fr;
   }
 
   .today-summary-grid {
@@ -1927,6 +2245,7 @@ button.tag-chip:hover {
   .settings-grid,
   .projects-layout,
   .saved-views-layout,
+  .focus-layout,
   .today-grid,
   .project-filters,
   .task-filter-panel,
@@ -1983,12 +2302,14 @@ button.tag-chip:hover {
 
   .planner-task-card,
   .time-block-card,
+  .focus-session-card,
   .inline-planner-control {
     grid-template-columns: 1fr;
   }
 
   .planner-task-actions,
-  .time-block-actions {
+  .time-block-actions,
+  .focus-session-actions {
     justify-content: flex-start;
   }
 
@@ -2028,6 +2349,10 @@ button.tag-chip:hover {
   }
 
   .dashboard-today-plan {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-mode-selector > div {
     grid-template-columns: 1fr;
   }
 

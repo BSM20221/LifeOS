@@ -56,6 +56,17 @@ service cloud.firestore {
           && request.resource.data.date == dateId;
       }
 
+      match /focusSessions/{sessionId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.id == sessionId;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid
+          && request.resource.data.id == sessionId;
+      }
+
       match /settings/{settingId} {
         allow read, create, update, delete: if ownsUserSpace(uid) && settingId == "main";
       }

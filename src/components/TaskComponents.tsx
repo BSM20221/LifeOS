@@ -1,4 +1,4 @@
-import { Archive, CalendarClock, Check, CheckCircle2, Pencil, Plus, Save, Trash2, Undo2, X } from "lucide-react";
+import { Archive, CalendarClock, Check, CheckCircle2, Clock3, Pencil, Plus, Save, Trash2, Undo2, X } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { energyLevels, priorities, taskStatuses } from "../constants";
 import type { EnergyLevel, FilterCriteria, Project, TagCount, Task, TaskFormValues, TaskPriority, TaskStatus } from "../types";
@@ -66,6 +66,7 @@ export function TaskSection({
   onArchive,
   onMoveToday,
   onMoveUpcoming,
+  onFocus,
 }: {
   loading: boolean;
   page: string;
@@ -83,6 +84,7 @@ export function TaskSection({
   onArchive: (task: Task) => void;
   onMoveToday: (task: Task) => void;
   onMoveUpcoming: (task: Task) => void;
+  onFocus?: (task: Task) => void;
 }) {
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const title = page === "settings" ? "Archived tasks" : page === "dashboard" ? "Recent tasks" : `${titleCase(page)} tasks`;
@@ -116,6 +118,7 @@ export function TaskSection({
             onArchive={onArchive}
             onMoveToday={onMoveToday}
             onMoveUpcoming={onMoveUpcoming}
+            onFocus={onFocus}
           />
         ))}
       </div>
@@ -133,6 +136,7 @@ export function TaskRow({
   onArchive,
   onMoveToday,
   onMoveUpcoming,
+  onFocus,
   onTagClick,
 }: {
   task: Task;
@@ -144,6 +148,7 @@ export function TaskRow({
   onArchive: (task: Task) => void;
   onMoveToday: (task: Task) => void;
   onMoveUpcoming: (task: Task) => void;
+  onFocus?: (task: Task) => void;
   onTagClick?: (tag: string) => void;
 }) {
   return (
@@ -213,6 +218,13 @@ export function TaskRow({
           <button type="button" className="icon-text-button" onClick={() => onArchive(task)}>
             <Archive size={16} />
             Archive
+          </button>
+        ) : null}
+
+        {onFocus && task.status !== "done" && task.status !== "archived" ? (
+          <button type="button" className="icon-text-button subtle-focus-button" onClick={() => onFocus(task)}>
+            <Clock3 size={16} />
+            Focus
           </button>
         ) : null}
       </div>

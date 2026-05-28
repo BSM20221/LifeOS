@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Timer,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
@@ -18,12 +19,14 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
 import { starterProjects } from "./constants";
-import { getProjectStats, useDailyPlan, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
+import { getProjectStats, useDailyPlan, useUserFocusSessions, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
 import { parseQuickCapture } from "./taskParser";
 import type {
   DailyPlan,
   DailyReflection,
   FilterCriteria,
+  FocusMode,
+  FocusSession,
   Project,
   ProjectFormValues,
   ProjectStats,
@@ -38,15 +41,17 @@ import type {
 import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCountsByTag, getDueDateGroup, normalizeTags } from "./filterUtils";
 import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
 import { calculateTodayStats, formatMinutes, getTodayDateId } from "./todayUtils";
+import { calculateElapsedSeconds, createFocusSessionPayload, getTodayFocusStats, secondsToStoredMinutes } from "./focusUtils";
 import { AuthScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
+import { FocusPage } from "./components/FocusComponents";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
 import { SavedViewForm, SavedViewsPage } from "./components/SavedViewsComponents";
 import { QuickCapture, TaskEditor, TaskSection } from "./components/TaskComponents";
 import { TagList } from "./components/TaskBrowseComponents";
 import { TodayPage } from "./components/TodayComponents";
 
-type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "settings";
+type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "settings";
 
 type NavItem = {
   id: PageId;
@@ -75,6 +80,7 @@ const navItems: NavItem[] = [
   { id: "upcoming", label: "Upcoming", icon: CalendarClock },
   { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "saved-views", label: "Saved Views", icon: ListFilter },
+  { id: "focus", label: "Focus", icon: Timer },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -107,6 +113,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [savedFilterEditor, setSavedFilterEditor] = useState<SavedFilterEditorState | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSavedFilterId, setSelectedSavedFilterId] = useState<string | null>(null);
+  const [selectedFocusTaskId, setSelectedFocusTaskId] = useState<string | null>(null);
   const [taskFilters, setTaskFilters] = useState<FilterCriteria>({});
   const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -117,9 +124,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const projectState = useUserProjects(user);
   const savedFilterState = useUserSavedFilters(user);
   const dailyPlanState = useDailyPlan(user, todayDateId);
+  const focusSessionState = useUserFocusSessions(user);
   const { tasks } = taskState;
   const { projects } = projectState;
   const { filters: savedFilters } = savedFilterState;
+  const { sessions: focusSessions } = focusSessionState;
   const dailyPlan = dailyPlanState.plan;
 
   useEffect(() => {
@@ -161,6 +170,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const noProjectTasks = openTasks.filter((task) => !task.projectId);
   const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
   const todayStats = useMemo(() => calculateTodayStats(tasks, dailyPlan, todayDateId), [dailyPlan, tasks, todayDateId]);
+  const todayFocusStats = useMemo(() => getTodayFocusStats(focusSessions, todayDateId), [focusSessions, todayDateId]);
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
   const nextTask = openTasks.find((task) => task.priority === "urgent" || task.priority === "high") ?? todayTasks[0] ?? openTasks[0] ?? null;
   const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? "Dashboard";
@@ -172,7 +182,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         ? tasks.filter((task) => task.status !== "archived")
         : activePage === "settings"
           ? tasks.filter((task) => task.status === "archived")
-          : activePage === "projects" || activePage === "saved-views"
+          : activePage === "projects" || activePage === "saved-views" || activePage === "focus"
             ? []
             : tasks.filter((task) => task.status === activePage);
 
@@ -337,20 +347,124 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   function startFocusBlock(task: Task) {
-    const { startTime, endTime } = getFocusBlockTimes(Number(task.estimatedMinutes || 50));
+    openFocusForTask(task);
+  }
+
+  function openFocusForTask(task: Task) {
+    setSelectedFocusTaskId(task.id);
+    window.location.hash = "focus";
+    setActionMessage("Focus timer ready.");
+  }
+
+  async function startFocusSession(values: { taskId: string; mode: FocusMode; plannedMinutes: number; notes: string }) {
+    const activeSession = focusSessions.find((session) => session.status === "running" || session.status === "paused");
+    if (activeSession) {
+      throw new Error("Finish, cancel, or complete the current focus session before starting another.");
+    }
+
+    const task = values.taskId ? tasks.find((candidateTask) => candidateTask.id === values.taskId) ?? null : null;
+    const sessionRef = doc(collection(db, "users", user.uid, "focusSessions"));
+    const startedAt = getNowISOString();
+    await setDoc(sessionRef, {
+      ...createFocusSessionPayload({
+        id: sessionRef.id,
+        userId: user.uid,
+        task,
+        dailyPlanDate: todayDateId,
+        mode: values.mode,
+        plannedMinutes: values.plannedMinutes,
+        notes: values.notes,
+        startedAt,
+      }),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    setSelectedFocusTaskId(task?.id ?? null);
+    setActionMessage("Focus session started.");
+  }
+
+  function pauseFocusSession(session: FocusSession) {
+    const elapsedSeconds = calculateElapsedSeconds(session);
     void runAction(
       () =>
-        saveTimeBlock(null, {
-          taskId: task.id,
-          title: `Focus: ${task.title}`,
-          startTime,
-          endTime,
-          type: "deep-work",
-          notes: "",
-          completed: false,
+        updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
+          status: "paused",
+          actualMinutes: secondsToStoredMinutes(elapsedSeconds),
+          pausedAt: getNowISOString(),
+          updatedAt: serverTimestamp(),
+          userId: user.uid,
         }),
-      "Focus block added to today."
+      "Focus timer paused."
     );
+  }
+
+  function resumeFocusSession(session: FocusSession) {
+    void runAction(
+      () =>
+        updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
+          status: "running",
+          startedAt: getNowISOString(),
+          pausedAt: null,
+          updatedAt: serverTimestamp(),
+          userId: user.uid,
+        }),
+      "Focus timer resumed."
+    );
+  }
+
+  function cancelFocusSession(session: FocusSession) {
+    if (!window.confirm("Cancel this focus session? The elapsed time will be saved as cancelled.")) {
+      return;
+    }
+
+    const elapsedSeconds = calculateElapsedSeconds(session);
+    void runAction(
+      () =>
+        updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
+          status: "cancelled",
+          actualMinutes: secondsToStoredMinutes(elapsedSeconds),
+          cancelledAt: getNowISOString(),
+          updatedAt: serverTimestamp(),
+          userId: user.uid,
+        }),
+      "Focus session cancelled."
+    );
+  }
+
+  function completeFocusSession(session: FocusSession) {
+    const elapsedSeconds = calculateElapsedSeconds(session);
+    void runAction(
+      () =>
+        updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
+          status: "completed",
+          actualMinutes: secondsToStoredMinutes(elapsedSeconds),
+          completedAt: getNowISOString(),
+          updatedAt: serverTimestamp(),
+          userId: user.uid,
+        }),
+      "Focus session complete."
+    );
+  }
+
+  function deleteFocusSession(session: FocusSession) {
+    if (!window.confirm("Delete this focus session? This cannot be undone.")) {
+      return;
+    }
+
+    void runAction(() => deleteDoc(doc(db, "users", user.uid, "focusSessions", session.id)), "Focus session deleted.");
+  }
+
+  async function saveFocusSessionNotes(session: FocusSession, notes: string) {
+    await updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
+      notes: notes.trim(),
+      updatedAt: serverTimestamp(),
+      userId: user.uid,
+    });
+    setActionMessage("Focus notes saved.");
+  }
+
+  function markTaskDoneFromFocus(task: Task) {
+    void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.");
   }
 
   async function saveProject(values: ProjectFormValues, project: Project | null) {
@@ -544,7 +658,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         <div className="brand-row">
           <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
           <div>
-            <p className="eyebrow">Phase 4 workspace</p>
+            <p className="eyebrow">Phase 5 workspace</p>
             <h1>LifeOS v2</h1>
           </div>
         </div>
@@ -606,6 +720,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {projectState.error ? <StatusBanner tone="error" message={projectState.error} /> : null}
         {savedFilterState.error ? <StatusBanner tone="error" message={savedFilterState.error} /> : null}
         {dailyPlanState.error ? <StatusBanner tone="error" message={dailyPlanState.error} /> : null}
+        {focusSessionState.error ? <StatusBanner tone="error" message={focusSessionState.error} /> : null}
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -624,7 +739,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
             overdueTasks={overdueTasks}
             dailyPlan={dailyPlan}
             todayStats={todayStats}
+            focusStats={todayFocusStats}
             onQuickCreate={(value) => createTaskFromQuick(value, "inbox")}
+            onOpenFocusTask={openFocusForTask}
             onOpenSavedFilter={(filter) => {
               setSelectedSavedFilterId(filter.id);
               window.location.hash = "saved-views";
@@ -644,6 +761,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             overdueTasks={overdueTasks}
             projects={projects}
             stats={todayStats}
+            focusStats={todayFocusStats}
             onQuickCreate={(value) => createTaskFromQuick(value, "today")}
             onAddTopTask={addTopTask}
             onRemoveTopTask={removeTopTask}
@@ -659,6 +777,28 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onMoveTask={(task, status) =>
               void runAction(() => updateTask(task, { status, completedAt: null }), status === "inbox" ? "Task moved to Inbox." : "Task moved to Upcoming.")
             }
+            onFocusTask={openFocusForTask}
+          />
+        ) : null}
+
+        {activePage === "focus" ? (
+          <FocusPage
+            sessions={focusSessions}
+            loading={focusSessionState.loading}
+            tasks={tasks}
+            projects={projects}
+            selectedTaskId={selectedFocusTaskId}
+            todayDateId={todayDateId}
+            stats={todayFocusStats}
+            onSelectTask={setSelectedFocusTaskId}
+            onStartSession={startFocusSession}
+            onPauseSession={pauseFocusSession}
+            onResumeSession={resumeFocusSession}
+            onCancelSession={cancelFocusSession}
+            onCompleteSession={completeFocusSession}
+            onDeleteSession={deleteFocusSession}
+            onSaveSessionNotes={saveFocusSessionNotes}
+            onMarkTaskDone={markTaskDoneFromFocus}
           />
         ) : null}
 
@@ -724,6 +864,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
                 ),
               onMoveUpcoming: (task) =>
                 void runAction(() => updateTask(task, { status: "upcoming", completedAt: null }), "Task moved to Upcoming."),
+              onFocus: openFocusForTask,
             }}
           />
         ) : null}
@@ -736,7 +877,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} savedFilters={savedFilters} tagCount={tagCounts.length} /> : null}
 
-        {activePage !== "projects" && activePage !== "saved-views" && activePage !== "today" ? (
+        {activePage !== "projects" && activePage !== "saved-views" && activePage !== "today" && activePage !== "focus" ? (
           <TaskSection
             loading={taskState.loading}
             page={activePage}
@@ -765,6 +906,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onMoveUpcoming={(task) =>
               void runAction(() => updateTask(task, { status: "upcoming", completedAt: null }), "Task moved to Upcoming.")
             }
+            onFocus={openFocusForTask}
           />
         ) : null}
       </section>
@@ -812,7 +954,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
     overdueTasks,
     dailyPlan,
     todayStats,
+    focusStats,
     onQuickCreate,
+    onOpenFocusTask,
     onOpenSavedFilter,
     onSelectTag,
     onApplyTaskSignal,
@@ -832,7 +976,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
     overdueTasks: Task[];
     dailyPlan: DailyPlan;
     todayStats: ReturnType<typeof calculateTodayStats>;
+    focusStats: ReturnType<typeof getTodayFocusStats>;
     onQuickCreate: (value: string) => Promise<void>;
+    onOpenFocusTask: (task: Task) => void;
     onOpenSavedFilter: (filter: SavedFilter) => void;
     onSelectTag: (tag: string) => void;
     onApplyTaskSignal: (criteria: FilterCriteria, message: string) => void;
@@ -872,6 +1018,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
           <MetricCard icon={CheckCircle2} label="Today" value={String(todayTasks.length)} detail="Scheduled for now" />
           <MetricCard icon={FolderKanban} label="Active projects" value={String(activeProjects.length)} detail="Active or paused" />
           <MetricCard icon={ListFilter} label="Saved views" value={String(savedFilters.length)} detail="Custom task filters" />
+          <MetricCard icon={Timer} label="Focus today" value={formatMinutes(focusStats.totalFocusedMinutes)} detail="Completed focus time" />
+          <MetricCard icon={Check} label="Focus sessions" value={String(focusStats.completedSessions)} detail="Completed today" />
         </section>
 
         <section className="content-grid dashboard-project-grid">
@@ -903,6 +1051,12 @@ function ProtectedLifeOS({ user }: { user: User }) {
               ))}
               {deepWorkTask ? <em>Deep Work: {deepWorkTask.title}</em> : <em>No Deep Work task selected.</em>}
             </div>
+            {deepWorkTask ? (
+              <button className="secondary-button" type="button" onClick={() => onOpenFocusTask(deepWorkTask)}>
+                <Timer size={17} />
+                Start focus
+              </button>
+            ) : null}
           </article>
 
           <article className="panel">
@@ -1172,6 +1326,8 @@ function getPageHeadline(page: PageId) {
       return "Plan your Top 3, Deep Work, time blocks, and daily reflection.";
     case "upcoming":
       return "Keep future commitments visible without crowding today.";
+    case "focus":
+      return "Start Pomodoro sessions, protect Deep Work, and track focused minutes.";
     case "settings":
       return "Confirm account, Firebase, and archived task state.";
   }

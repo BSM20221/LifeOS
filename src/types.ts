@@ -8,6 +8,8 @@ export type ProjectArea = "Study" | "Business" | "Health" | "Client Work" | "Per
 export type DueDateGroup = "no-due-date" | "overdue" | "today" | "tomorrow" | "this-week" | "later";
 export type TimeBlockType = "deep-work" | "study" | "admin" | "health" | "break" | "personal" | "other";
 export type MoodLevel = "low" | "okay" | "good" | "great";
+export type FocusMode = "pomodoro" | "short-break" | "long-break" | "custom";
+export type FocusStatus = "running" | "paused" | "completed" | "cancelled";
 
 export type Task = {
   id: string;
@@ -151,4 +153,30 @@ export type TodayStats = {
   totalEstimatedMinutes: number;
   completedToday: number;
   topCompleted: number;
+};
+
+export type FocusSession = {
+  id: string;
+  userId: string;
+  taskId: string | null;
+  projectId: string | null;
+  dailyPlanDate: string;
+  mode: FocusMode;
+  plannedMinutes: number;
+  actualMinutes: number;
+  status: FocusStatus;
+  startedAt: string;
+  pausedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  notes: string;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+};
+
+export type FocusStats = {
+  completedSessions: number;
+  totalFocusedMinutes: number;
+  minutesByProject: Record<string, number>;
+  minutesByTask: Record<string, number>;
 };

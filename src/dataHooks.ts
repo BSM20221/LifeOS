@@ -10,10 +10,11 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { DailyPlan, Project, ProjectStats, SavedFilter, Task } from "./types";
+import type { DailyPlan, FocusSession, Project, ProjectStats, SavedFilter, Task } from "./types";
 import { isFilterCriteria, normalizeTags } from "./filterUtils";
 import { getFriendlyError, isEnergyLevel, isProjectArea, isProjectStatus, isTaskPriority, isTaskStatus } from "./utils";
 import { createEmptyDailyPlan, normalizeReflection, normalizeTimeBlock } from "./todayUtils";
+import { isFocusMode, isFocusStatus } from "./focusUtils";
 
 export function useUserTasks(user: User) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -121,6 +122,32 @@ export function useDailyPlan(user: User, dateId: string) {
   return { plan, exists, loading, error };
 }
 
+export function useUserFocusSessions(user: User) {
+  const [sessions, setSessions] = useState<FocusSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+
+    const sessionQuery = query(collection(db, "users", user.uid, "focusSessions"), orderBy("createdAt", "desc"));
+    return onSnapshot(
+      sessionQuery,
+      (snapshot) => {
+        setSessions(snapshot.docs.map(mapFocusSessionDocument));
+        setLoading(false);
+      },
+      (snapshotError) => {
+        setError(getFriendlyError(snapshotError));
+        setLoading(false);
+      }
+    );
+  }, [user.uid]);
+
+  return { sessions, loading, error };
+}
+
 export function getProjectStats(projectId: string, tasks: Task[]): ProjectStats {
   const projectTasks = tasks.filter((task) => task.projectId === projectId && task.status !== "archived");
   const completedTasks = projectTasks.filter((task) => task.status === "done").length;
@@ -186,6 +213,28 @@ function mapDailyPlanDocument(id: string, data: DocumentData | undefined, userId
     reflection: normalizeReflection(planData.reflection),
     createdAt: planData.createdAt ?? null,
     updatedAt: planData.updatedAt ?? null,
+  };
+}
+
+function mapFocusSessionDocument(snapshot: QueryDocumentSnapshot<DocumentData>): FocusSession {
+  const data = snapshot.data();
+  return {
+    id: typeof data.id === "string" ? data.id : snapshot.id,
+    userId: String(data.userId ?? ""),
+    taskId: typeof data.taskId === "string" ? data.taskId : null,
+    projectId: typeof data.projectId === "string" ? data.projectId : null,
+    dailyPlanDate: String(data.dailyPlanDate ?? ""),
+    mode: isFocusMode(data.mode) ? data.mode : "pomodoro",
+    plannedMinutes: Math.max(1, Number(data.plannedMinutes ?? 25)),
+    actualMinutes: Math.max(0, Number(data.actualMinutes ?? 0)),
+    status: isFocusStatus(data.status) ? data.status : "cancelled",
+    startedAt: String(data.startedAt ?? ""),
+    pausedAt: typeof data.pausedAt === "string" ? data.pausedAt : null,
+    completedAt: typeof data.completedAt === "string" ? data.completedAt : null,
+    cancelledAt: typeof data.cancelledAt === "string" ? data.cancelledAt : null,
+    notes: String(data.notes ?? ""),
+    createdAt: data.createdAt ?? null,
+    updatedAt: data.updatedAt ?? null,
   };
 }
 

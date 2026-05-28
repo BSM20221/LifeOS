@@ -1,6 +1,6 @@
 # LifeOS v2
 
-LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, project management, tags, saved task views, and daily planning.
+LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, project management, tags, saved task views, daily planning, and focus sessions.
 
 ## Stack
 
@@ -50,6 +50,12 @@ Daily plans are stored under the signed-in user's document by date:
 users/{uid}/dailyPlans/{YYYY-MM-DD}
 ```
 
+Focus sessions are stored under the signed-in user's document:
+
+```text
+users/{uid}/focusSessions/{sessionId}
+```
+
 Each task stores:
 
 ```text
@@ -77,6 +83,14 @@ id, userId, date, topTaskIds, deepWorkTaskId, timeBlocks,
 reflection, createdAt, updatedAt
 ```
 
+Each focus session stores:
+
+```text
+id, userId, taskId, projectId, dailyPlanDate, mode, plannedMinutes,
+actualMinutes, status, startedAt, pausedAt, completedAt, cancelledAt,
+notes, createdAt, updatedAt
+```
+
 Firestore rules in `firestore.rules` allow authenticated users to access only:
 
 ```text
@@ -85,6 +99,7 @@ users/{uid}/tasks/{taskId}
 users/{uid}/projects/{projectId}
 users/{uid}/filters/{filterId}
 users/{uid}/dailyPlans/{dateId}
+users/{uid}/focusSessions/{sessionId}
 users/{uid}/settings/main
 ```
 
@@ -140,3 +155,7 @@ The Today page stores one daily plan per user and date. It supports:
 - Time blocks with optional task assignment
 - Daily reflection with energy and mood
 - Today summary metrics for task count, overdue count, estimates, and completion
+
+## Focus Timer
+
+The Focus page supports Pomodoro, short break, long break, and custom timers. Sessions can be linked to tasks and projects, paused, resumed, cancelled, completed, and recovered after refresh from Firestore. Browser notifications are optional and requested only after clicking the notification button.

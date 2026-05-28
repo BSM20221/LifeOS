@@ -5,6 +5,7 @@ import type {
   DailyPlan,
   DailyReflection,
   EnergyLevel,
+  FocusStats,
   MoodLevel,
   Project,
   Task,
@@ -28,6 +29,7 @@ export function TodayPage({
   overdueTasks,
   projects,
   stats,
+  focusStats,
   onQuickCreate,
   onAddTopTask,
   onRemoveTopTask,
@@ -41,6 +43,7 @@ export function TodayPage({
   onEditTask,
   onMarkDone,
   onMoveTask,
+  onFocusTask,
 }: {
   dateId: string;
   plan: DailyPlan;
@@ -50,6 +53,7 @@ export function TodayPage({
   overdueTasks: Task[];
   projects: Project[];
   stats: TodayStats;
+  focusStats: FocusStats;
   onQuickCreate: (value: string) => Promise<void>;
   onAddTopTask: (taskId: string) => void;
   onRemoveTopTask: (taskId: string) => void;
@@ -63,6 +67,7 @@ export function TodayPage({
   onEditTask: (task: Task) => void;
   onMarkDone: (task: Task) => void;
   onMoveTask: (task: Task, status: "inbox" | "upcoming") => void;
+  onFocusTask: (task: Task) => void;
 }) {
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
@@ -80,7 +85,7 @@ export function TodayPage({
         <QuickCapture label="Quick capture for Today" onCreate={onQuickCreate} />
       </header>
 
-      <TodaySummary stats={stats} />
+      <TodaySummary stats={stats} focusStats={focusStats} />
 
       {loading ? <EmptyState title="Loading daily plan" message="Reading today's planning document from Firestore." /> : null}
 
@@ -114,6 +119,7 @@ export function TodayPage({
           onEditTask={onEditTask}
           onMarkDone={onMarkDone}
           onMoveTask={onMoveTask}
+          onFocusTask={onFocusTask}
         />
         <TodayTaskList
           title="Today tasks"
@@ -123,6 +129,7 @@ export function TodayPage({
           onEditTask={onEditTask}
           onMarkDone={onMarkDone}
           onMoveTask={onMoveTask}
+          onFocusTask={onFocusTask}
         />
       </section>
 
@@ -140,7 +147,7 @@ export function TodayPage({
   );
 }
 
-export function TodaySummary({ stats }: { stats: TodayStats }) {
+export function TodaySummary({ stats, focusStats }: { stats: TodayStats; focusStats: FocusStats }) {
   return (
     <section className="today-summary-grid" aria-label="Today summary">
       <SummaryTile label="Today tasks" value={String(stats.todayTasks)} />
@@ -148,6 +155,8 @@ export function TodaySummary({ stats }: { stats: TodayStats }) {
       <SummaryTile label="Estimated" value={formatMinutes(stats.totalEstimatedMinutes)} />
       <SummaryTile label="Completed" value={String(stats.completedToday)} />
       <SummaryTile label="Top 3 done" value={`${stats.topCompleted}/3`} />
+      <SummaryTile label="Focus" value={formatMinutes(focusStats.totalFocusedMinutes)} />
+      <SummaryTile label="Focus sessions" value={String(focusStats.completedSessions)} />
     </section>
   );
 }
@@ -290,7 +299,7 @@ export function DeepWorkCard({
           </button>
         </TaskPriorityCard>
       ) : (
-        <EmptyState title="No Deep Work task" message="Choose one task that deserves your best attention today." />
+        <EmptyState title="No Deep Work task" message="Choose a Deep Work task first." />
       )}
 
       <div className="inline-planner-control">
@@ -595,6 +604,7 @@ function TodayTaskList({
   onEditTask,
   onMarkDone,
   onMoveTask,
+  onFocusTask,
 }: {
   title: string;
   emptyMessage: string;
@@ -603,6 +613,7 @@ function TodayTaskList({
   onEditTask: (task: Task) => void;
   onMarkDone: (task: Task) => void;
   onMoveTask: (task: Task, status: "inbox" | "upcoming") => void;
+  onFocusTask: (task: Task) => void;
 }) {
   return (
     <article className="panel today-panel">
@@ -625,6 +636,10 @@ function TodayTaskList({
             </button>
             <button className="icon-text-button" type="button" onClick={() => onMoveTask(task, "upcoming")}>
               Upcoming
+            </button>
+            <button className="icon-text-button subtle-focus-button" type="button" onClick={() => onFocusTask(task)}>
+              <Clock3 size={16} />
+              Focus
             </button>
             <button className="icon-button task-icon-button" type="button" aria-label={`Edit ${task.title}`} onClick={() => onEditTask(task)}>
               <Pencil size={16} />
