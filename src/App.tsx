@@ -1,11 +1,11 @@
 import {
-  Archive,
   CalendarClock,
   Check,
   CheckCircle2,
   FolderKanban,
   Inbox,
   LayoutDashboard,
+  ListFilter,
   LogOut,
   Plus,
   Settings,
@@ -18,16 +18,19 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
 import { starterProjects } from "./constants";
-import { getProjectStats, useUserProjects, useUserTasks } from "./dataHooks";
-import { parseQuickTask } from "./taskParser";
-import type { Project, ProjectFormValues, ProjectStats, Task, TaskFormValues, TaskStatus } from "./types";
+import { getProjectStats, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
+import { parseQuickCapture } from "./taskParser";
+import type { FilterCriteria, Project, ProjectFormValues, ProjectStats, SavedFilter, SavedFilterFormValues, Task, TaskFormValues, TaskStatus } from "./types";
+import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCountsByTag, getDueDateGroup, normalizeTags } from "./filterUtils";
 import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
 import { AuthScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
-import { QuickCapture, TaskEditor, TaskSection, type TaskProjectFilter } from "./components/TaskComponents";
+import { SavedViewForm, SavedViewsPage } from "./components/SavedViewsComponents";
+import { QuickCapture, TaskEditor, TaskSection } from "./components/TaskComponents";
+import { TagList } from "./components/TaskBrowseComponents";
 
-type PageId = "dashboard" | "projects" | "inbox" | "today" | "upcoming" | "settings";
+type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "settings";
 
 type NavItem = {
   id: PageId;
@@ -45,12 +48,17 @@ type ProjectEditorState = {
   project: Project | null;
 };
 
+type SavedFilterEditorState = {
+  filter: SavedFilter | null;
+};
+
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "today", label: "Today", icon: CheckCircle2 },
   { id: "upcoming", label: "Upcoming", icon: CalendarClock },
+  { id: "projects", label: "Projects", icon: FolderKanban },
+  { id: "saved-views", label: "Saved Views", icon: ListFilter },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -80,16 +88,20 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [activePage, setActivePage] = useState<PageId>(() => getPageFromHash());
   const [taskEditor, setTaskEditor] = useState<TaskEditorState | null>(null);
   const [projectEditor, setProjectEditor] = useState<ProjectEditorState | null>(null);
+  const [savedFilterEditor, setSavedFilterEditor] = useState<SavedFilterEditorState | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [taskProjectFilter, setTaskProjectFilter] = useState<TaskProjectFilter>("all");
+  const [selectedSavedFilterId, setSelectedSavedFilterId] = useState<string | null>(null);
+  const [taskFilters, setTaskFilters] = useState<FilterCriteria>({});
   const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
 
   const taskState = useUserTasks(user);
   const projectState = useUserProjects(user);
+  const savedFilterState = useUserSavedFilters(user);
   const { tasks } = taskState;
   const { projects } = projectState;
+  const { filters: savedFilters } = savedFilterState;
 
   useEffect(() => {
     const handleHashChange = () => setActivePage(getPageFromHash());
@@ -120,10 +132,15 @@ function ProtectedLifeOS({ user }: { user: User }) {
       return stats;
     }, {});
   }, [projects, tasks]);
+  const tagCounts = useMemo(() => getTaskCountsByTag(tasks), [tasks]);
+  const savedFilterOpenCounts = useMemo(() => getTaskCountsByFilter(tasks, savedFilters), [savedFilters, tasks]);
 
   const openTasks = tasks.filter((task) => !["done", "archived"].includes(task.status));
   const todayTasks = tasks.filter((task) => task.status === "today");
   const doneTasks = tasks.filter((task) => task.status === "done");
+  const highPriorityTasks = openTasks.filter((task) => task.priority === "high");
+  const noProjectTasks = openTasks.filter((task) => !task.projectId);
+  const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
   const nextTask = openTasks.find((task) => task.priority === "urgent" || task.priority === "high") ?? todayTasks[0] ?? openTasks[0] ?? null;
   const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? "Dashboard";
@@ -132,26 +149,18 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const visibleTasks = useMemo(() => {
     const baseTasks =
       activePage === "dashboard"
-        ? tasks.filter((task) => task.status !== "archived").slice(0, 8)
+        ? tasks.filter((task) => task.status !== "archived")
         : activePage === "settings"
           ? tasks.filter((task) => task.status === "archived")
-          : activePage === "projects"
+          : activePage === "projects" || activePage === "saved-views"
             ? []
             : tasks.filter((task) => task.status === activePage);
 
-    if (taskProjectFilter === "all") {
-      return baseTasks;
-    }
-
-    if (taskProjectFilter === "none") {
-      return baseTasks.filter((task) => !task.projectId);
-    }
-
-    return baseTasks.filter((task) => task.projectId === taskProjectFilter);
-  }, [activePage, taskProjectFilter, tasks]);
+    return applyTaskFilters(baseTasks, taskFilters);
+  }, [activePage, taskFilters, tasks]);
 
   async function createTaskFromQuick(rawInput: string, defaultStatus: TaskStatus) {
-    const parsed = parseQuickTask(rawInput, selectableProjects);
+    const parsed = parseQuickCapture(rawInput, selectableProjects);
     if (!parsed.title) {
       throw new Error("Add a task title before saving.");
     }
@@ -332,6 +341,77 @@ function ProtectedLifeOS({ user }: { user: User }) {
     setSelectedProjectId(null);
   }
 
+  async function saveSavedFilter(values: SavedFilterFormValues, filter: SavedFilter | null) {
+    const cleanName = values.name.trim();
+    if (!cleanName) {
+      throw new Error("Saved view name is required.");
+    }
+
+    const payload = {
+      name: cleanName,
+      description: values.description.trim(),
+      color: values.color || "#2a5f48",
+      query: cleanFilterCriteria(values.query),
+    };
+
+    if (filter) {
+      await updateDoc(doc(db, "users", user.uid, "filters", filter.id), {
+        ...payload,
+        id: filter.id,
+        userId: user.uid,
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Saved view updated.");
+    } else {
+      const filterRef = doc(collection(db, "users", user.uid, "filters"));
+      await setDoc(filterRef, {
+        ...payload,
+        id: filterRef.id,
+        userId: user.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setSelectedSavedFilterId(filterRef.id);
+      window.location.hash = "saved-views";
+      setActionMessage("Saved view created.");
+    }
+
+    setSavedFilterEditor(null);
+  }
+
+  async function createSuggestedSavedFilter(values: SavedFilterFormValues) {
+    if (savedFilters.some((filter) => filter.name.toLowerCase() === values.name.toLowerCase())) {
+      setActionMessage(`"${values.name}" already exists.`);
+      return;
+    }
+
+    await runAction(() => saveSavedFilter(values, null), "Suggested saved view created.");
+  }
+
+  async function deleteSavedFilter(filter: SavedFilter) {
+    if (!window.confirm(`Delete saved view "${filter.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    await deleteDoc(doc(db, "users", user.uid, "filters", filter.id));
+    if (selectedSavedFilterId === filter.id) {
+      setSelectedSavedFilterId(null);
+    }
+  }
+
+  function applyTagFilter(tag: string) {
+    setTaskFilters({ tag });
+    setSelectedSavedFilterId(null);
+    window.location.hash = "dashboard";
+    setActionMessage(`Filtering tasks by #${tag}.`);
+  }
+
+  function applyDashboardFilter(criteria: FilterCriteria, message: string) {
+    setTaskFilters(criteria);
+    window.location.hash = "dashboard";
+    setActionMessage(message);
+  }
+
   async function runAction(action: () => Promise<void>, successMessage: string) {
     try {
       setActionError("");
@@ -349,7 +429,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         <div className="brand-row">
           <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
           <div>
-            <p className="eyebrow">Phase 2 workspace</p>
+            <p className="eyebrow">Phase 3 workspace</p>
             <h1>LifeOS v2</h1>
           </div>
         </div>
@@ -388,6 +468,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
               <Plus size={18} />
               New project
             </button>
+          ) : activePage === "saved-views" ? (
+            <button className="primary-button" type="button" onClick={() => setSavedFilterEditor({ filter: null })}>
+              <Plus size={18} />
+              New view
+            </button>
           ) : (
             <button
               className="primary-button"
@@ -404,6 +489,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {actionMessage ? <StatusBanner tone="success" message={actionMessage} /> : null}
         {taskState.error ? <StatusBanner tone="error" message={taskState.error} /> : null}
         {projectState.error ? <StatusBanner tone="error" message={projectState.error} /> : null}
+        {savedFilterState.error ? <StatusBanner tone="error" message={savedFilterState.error} /> : null}
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -411,11 +497,22 @@ function ProtectedLifeOS({ user }: { user: User }) {
             tasks={tasks}
             openTasks={openTasks}
             todayTasks={todayTasks}
-            doneTasks={doneTasks}
             completionRate={completionRate}
             projects={projects}
             statsByProject={statsByProject}
+            savedFilters={savedFilters}
+            savedFilterOpenCounts={savedFilterOpenCounts}
+            tagCounts={tagCounts}
+            highPriorityTasks={highPriorityTasks}
+            noProjectTasks={noProjectTasks}
+            overdueTasks={overdueTasks}
             onQuickCreate={(value) => createTaskFromQuick(value, "inbox")}
+            onOpenSavedFilter={(filter) => {
+              setSelectedSavedFilterId(filter.id);
+              window.location.hash = "saved-views";
+            }}
+            onSelectTag={applyTagFilter}
+            onApplyTaskSignal={applyDashboardFilter}
           />
         ) : null}
 
@@ -454,22 +551,56 @@ function ProtectedLifeOS({ user }: { user: User }) {
           />
         ) : null}
 
+        {activePage === "saved-views" ? (
+          <SavedViewsPage
+            filters={savedFilters}
+            filtersLoading={savedFilterState.loading}
+            tasks={tasks}
+            projects={projects}
+            tags={tagCounts}
+            selectedFilterId={selectedSavedFilterId}
+            onSelectFilter={setSelectedSavedFilterId}
+            onCreateFilter={() => setSavedFilterEditor({ filter: null })}
+            onCreateSuggestedFilter={(values) => void createSuggestedSavedFilter(values)}
+            onEditFilter={(filter) => setSavedFilterEditor({ filter })}
+            onDeleteFilter={(filter) => void runAction(() => deleteSavedFilter(filter), "Saved view deleted.")}
+            onSelectTag={applyTagFilter}
+            taskActions={{
+              onEdit: (task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId }),
+              onDelete: (task) => void runAction(() => deleteTask(task), "Task deleted."),
+              onMarkDone: (task) => void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done."),
+              onUndoDone: (task) => void runAction(() => updateTask(task, { status: "today", completedAt: null }), "Task moved back to Today."),
+              onArchive: (task) => void runAction(() => updateTask(task, { status: "archived" }), "Task archived."),
+              onMoveToday: (task) =>
+                void runAction(
+                  () => updateTask(task, { status: "today", dueDate: getTodayISODate(), completedAt: null }),
+                  "Task moved to Today."
+                ),
+              onMoveUpcoming: (task) =>
+                void runAction(() => updateTask(task, { status: "upcoming", completedAt: null }), "Task moved to Upcoming."),
+            }}
+          />
+        ) : null}
+
         {activePage === "inbox" ? (
           <PagePanel title="Inbox capture" description="Collect loose tasks first, then clarify them into today, upcoming, or a project.">
             <QuickCapture label="Add to Inbox" onCreate={(value) => createTaskFromQuick(value, "inbox")} />
           </PagePanel>
         ) : null}
 
-        {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} /> : null}
+        {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} savedFilters={savedFilters} tagCount={tagCounts.length} /> : null}
 
-        {activePage !== "projects" ? (
+        {activePage !== "projects" && activePage !== "saved-views" ? (
           <TaskSection
             loading={taskState.loading}
             page={activePage}
             tasks={visibleTasks}
             projects={projects}
-            projectFilter={taskProjectFilter}
-            onProjectFilterChange={setTaskProjectFilter}
+            tags={tagCounts}
+            filterCriteria={taskFilters}
+            onFilterChange={setTaskFilters}
+            onClearFilters={() => setTaskFilters({})}
+            onSelectTag={(tag) => setTaskFilters((current) => ({ ...current, tag }))}
             onEdit={(task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId })}
             onDelete={(task) => void runAction(() => deleteTask(task), "Task deleted.")}
             onMarkDone={(task) =>
@@ -506,6 +637,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
       {projectEditor ? (
         <ProjectForm project={projectEditor.project} onClose={() => setProjectEditor(null)} onSave={(values) => saveProject(values, projectEditor.project)} />
       ) : null}
+
+      {savedFilterEditor ? (
+        <SavedViewForm
+          filter={savedFilterEditor.filter}
+          projects={projects}
+          tags={tagCounts}
+          onClose={() => setSavedFilterEditor(null)}
+          onSave={(values) => saveSavedFilter(values, savedFilterEditor.filter)}
+        />
+      ) : null}
     </main>
   );
 
@@ -514,27 +655,45 @@ function ProtectedLifeOS({ user }: { user: User }) {
     tasks,
     openTasks,
     todayTasks,
-    doneTasks,
     completionRate,
     projects,
     statsByProject,
+    savedFilters,
+    savedFilterOpenCounts,
+    tagCounts,
+    highPriorityTasks,
+    noProjectTasks,
+    overdueTasks,
     onQuickCreate,
+    onOpenSavedFilter,
+    onSelectTag,
+    onApplyTaskSignal,
   }: {
     nextTask: Task | null;
     tasks: Task[];
     openTasks: Task[];
     todayTasks: Task[];
-    doneTasks: Task[];
     completionRate: number;
     projects: Project[];
     statsByProject: Record<string, ProjectStats>;
+    savedFilters: SavedFilter[];
+    savedFilterOpenCounts: Record<string, number>;
+    tagCounts: ReturnType<typeof getTaskCountsByTag>;
+    highPriorityTasks: Task[];
+    noProjectTasks: Task[];
+    overdueTasks: Task[];
     onQuickCreate: (value: string) => Promise<void>;
+    onOpenSavedFilter: (filter: SavedFilter) => void;
+    onSelectTag: (tag: string) => void;
+    onApplyTaskSignal: (criteria: FilterCriteria, message: string) => void;
   }) {
     const activeProjects = projects.filter((project) => project.status === "active" || project.status === "paused");
     const topProjects = [...activeProjects]
       .sort((left, right) => (statsByProject[right.id]?.openTasks ?? 0) - (statsByProject[left.id]?.openTasks ?? 0))
       .slice(0, 3);
     const recentProjects = [...projects].slice(0, 3);
+    const topTags = tagCounts.slice(0, 6);
+    const savedViewShortcuts = savedFilters.slice(0, 3);
 
     return (
       <>
@@ -559,10 +718,83 @@ function ProtectedLifeOS({ user }: { user: User }) {
           <MetricCard icon={Inbox} label="Open tasks" value={String(openTasks.length)} detail="Inbox, Today, Upcoming" />
           <MetricCard icon={CheckCircle2} label="Today" value={String(todayTasks.length)} detail="Scheduled for now" />
           <MetricCard icon={FolderKanban} label="Active projects" value={String(activeProjects.length)} detail="Active or paused" />
-          <MetricCard icon={Check} label="Done" value={String(doneTasks.length)} detail={`${tasks.length} total tasks`} />
+          <MetricCard icon={ListFilter} label="Saved views" value={String(savedFilters.length)} detail="Custom task filters" />
         </section>
 
         <section className="content-grid dashboard-project-grid">
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Signals</p>
+                <h3>Task browsing shortcuts</h3>
+              </div>
+              <Check size={20} />
+            </div>
+            <div className="dashboard-signal-grid">
+              <button type="button" onClick={() => onApplyTaskSignal({ priority: "high" }, "Showing high priority tasks.")}>
+                <strong>{highPriorityTasks.length}</strong>
+                <span>High priority</span>
+              </button>
+              <button type="button" onClick={() => onApplyTaskSignal({ projectId: "none" }, "Showing tasks with no project.")}>
+                <strong>{noProjectTasks.length}</strong>
+                <span>No project</span>
+              </button>
+              <button type="button" onClick={() => onApplyTaskSignal({ dueDateGroup: "overdue" }, "Showing overdue tasks.")}>
+                <strong>{overdueTasks.length}</strong>
+                <span>Overdue</span>
+              </button>
+              <button type="button" onClick={() => onApplyTaskSignal({ status: "today" }, "Showing today's tasks.")}>
+                <strong>{todayTasks.length}</strong>
+                <span>Today</span>
+              </button>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Saved views</p>
+                <h3>Quick access</h3>
+              </div>
+              <a className="secondary-button" href="#saved-views">
+                <ListFilter size={17} />
+                Views
+              </a>
+            </div>
+            {savedViewShortcuts.length === 0 ? (
+              <EmptyState title="No saved views" message="Create saved views for reusable task filters." />
+            ) : (
+              <div className="dashboard-project-list">
+                {savedViewShortcuts.map((filter) => (
+                  <button
+                    className="project-summary-row"
+                    type="button"
+                    key={filter.id}
+                    onClick={() => onOpenSavedFilter(filter)}
+                    style={{ "--project-color": filter.color } as CSSProperties}
+                  >
+                    <span className="project-color-dot" />
+                    <span>
+                      <strong>{filter.name}</strong>
+                      <small>{savedFilterOpenCounts[filter.id] ?? 0} open tasks</small>
+                    </span>
+                    <em>Open</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Tags</p>
+                <h3>Top tags</h3>
+              </div>
+            </div>
+            <TagList tags={topTags} onSelectTag={onSelectTag} />
+          </article>
+
           <article className="panel">
             <div className="panel-heading">
               <div>
@@ -645,7 +877,19 @@ function PagePanel({ title, description, children }: { title: string; descriptio
   );
 }
 
-function SettingsPage({ user, tasks, projects }: { user: User; tasks: Task[]; projects: Project[] }) {
+function SettingsPage({
+  user,
+  tasks,
+  projects,
+  savedFilters,
+  tagCount,
+}: {
+  user: User;
+  tasks: Task[];
+  projects: Project[];
+  savedFilters: SavedFilter[];
+  tagCount: number;
+}) {
   const openCount = tasks.filter((task) => !["done", "archived"].includes(task.status)).length;
   const activeProjectCount = projects.filter((project) => project.status === "active" || project.status === "paused").length;
   const configuredCount = firebaseEnvStatus.filter((item) => item.configured).length;
@@ -676,6 +920,14 @@ function SettingsPage({ user, tasks, projects }: { user: User; tasks: Task[]; pr
           <div>
             <dt>Active projects</dt>
             <dd>{activeProjectCount}</dd>
+          </div>
+          <div>
+            <dt>Saved views</dt>
+            <dd>{savedFilters.length}</dd>
+          </div>
+          <div>
+            <dt>Tags</dt>
+            <dd>{tagCount}</dd>
           </div>
         </dl>
       </article>
@@ -710,10 +962,7 @@ function normalizeTaskForm(values: TaskFormValues) {
     status: values.status,
     priority: values.priority,
     dueDate: values.dueDate,
-    tags: values.tags
-      .split(",")
-      .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
-      .filter(Boolean),
+    tags: normalizeTags(values.tags),
     estimatedMinutes: Math.max(0, Number(values.estimatedMinutes || 0)),
     energyLevel: values.energyLevel,
     notes: values.notes.trim(),
@@ -732,6 +981,8 @@ function getPageHeadline(page: PageId) {
       return "A Firestore-backed command center for tasks and projects.";
     case "projects":
       return "Plan outcomes, track progress, and connect tasks to real work.";
+    case "saved-views":
+      return "Save reusable filters and browse tasks by tags, priority, due dates, and context.";
     case "inbox":
       return "Capture raw tasks quickly and clarify them later.";
     case "today":

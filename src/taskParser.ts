@@ -1,4 +1,5 @@
 import type { Project, TaskPriority } from "./types";
+import { normalizeTags } from "./filterUtils";
 
 const priorityTokens: Record<string, TaskPriority> = {
   "!low": "low",
@@ -7,14 +8,14 @@ const priorityTokens: Record<string, TaskPriority> = {
   "!urgent": "urgent",
 };
 
-export function parseQuickTask(input: string, projects: Project[] = []) {
+export function parseQuickCapture(input: string, projects: Project[] = []) {
   const raw = input.trim();
   const projectMatch = findProjectToken(raw, projects);
   const projectTokenPattern = projectMatch?.pattern ?? unresolvedProjectPattern(raw);
   const textWithoutProject = projectTokenPattern ? raw.replace(projectTokenPattern, " ") : raw;
   const unresolvedProjectName = projectMatch ? "" : readUnresolvedProjectName(raw);
 
-  const tags = Array.from(textWithoutProject.matchAll(/#([\w-]+)/g)).map((match) => match[1].toLowerCase());
+  const tags = normalizeTags(Array.from(textWithoutProject.matchAll(/#([\w-]+)/g)).map((match) => match[1]));
   const priorityMatch = textWithoutProject.match(/!(low|medium|high|urgent)\b/i);
   const priority = priorityMatch ? priorityTokens[priorityMatch[0].toLowerCase()] : "medium";
 
@@ -33,6 +34,8 @@ export function parseQuickTask(input: string, projects: Project[] = []) {
     unresolvedProjectName,
   };
 }
+
+export const parseQuickTask = parseQuickCapture;
 
 function findProjectToken(raw: string, projects: Project[]) {
   const sortedProjects = [...projects].sort((left, right) => right.name.length - left.name.length);

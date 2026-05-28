@@ -32,6 +32,17 @@ service cloud.firestore {
           && request.resource.data.id == projectId;
       }
 
+      match /filters/{filterId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.id == filterId;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid
+          && request.resource.data.id == filterId;
+      }
+
       match /settings/{settingId} {
         allow read, create, update, delete: if ownsUserSpace(uid) && settingId == "main";
       }

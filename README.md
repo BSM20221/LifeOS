@@ -1,6 +1,6 @@
 # LifeOS v2
 
-LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, and Phase 2 project management.
+LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, project management, tags, and saved task views.
 
 ## Stack
 
@@ -38,6 +38,12 @@ Projects are stored under the signed-in user's document:
 users/{uid}/projects/{projectId}
 ```
 
+Saved filters are stored under the signed-in user's document:
+
+```text
+users/{uid}/filters/{filterId}
+```
+
 Each task stores:
 
 ```text
@@ -52,12 +58,19 @@ id, userId, name, description, color, status, area, createdAt,
 updatedAt, archivedAt, completedAt
 ```
 
+Each saved filter stores:
+
+```text
+id, userId, name, description, query, color, createdAt, updatedAt
+```
+
 Firestore rules in `firestore.rules` allow authenticated users to access only:
 
 ```text
 users/{uid}
 users/{uid}/tasks/{taskId}
 users/{uid}/projects/{projectId}
+users/{uid}/filters/{filterId}
 users/{uid}/settings/main
 ```
 
@@ -86,4 +99,20 @@ Example:
 
 ```text
 Study modal verbs #german !high +German B2
+```
+
+## Tags And Saved Views
+
+Tags are derived from existing tasks. They are normalized to lowercase, deduplicated, and available in task filters and the Saved Views page.
+
+Saved Views use a simple structured query object with optional fields:
+
+```text
+searchText, status, priority, projectId, tag, dueDateGroup, energyLevel
+```
+
+Due date groups are:
+
+```text
+no-due-date, overdue, today, tomorrow, this-week, later
 ```

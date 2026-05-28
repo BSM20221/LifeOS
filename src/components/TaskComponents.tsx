@@ -1,11 +1,11 @@
-import { Archive, CalendarClock, Check, CheckCircle2, Pencil, Plus, Save, Tag, Trash2, Undo2, X } from "lucide-react";
+import { Archive, CalendarClock, Check, CheckCircle2, Pencil, Plus, Save, Trash2, Undo2, X } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { energyLevels, priorities, taskStatuses } from "../constants";
-import type { EnergyLevel, Project, Task, TaskFormValues, TaskPriority, TaskStatus } from "../types";
+import type { EnergyLevel, FilterCriteria, Project, TagCount, Task, TaskFormValues, TaskPriority, TaskStatus } from "../types";
 import { getFriendlyError, titleCase } from "../utils";
 import { EmptyState, StatusBanner } from "./Common";
-
-export type TaskProjectFilter = "all" | "none" | string;
+import { normalizeTags } from "../filterUtils";
+import { TagChip, TaskFilters } from "./TaskBrowseComponents";
 
 export function QuickCapture({
   label,
@@ -54,8 +54,11 @@ export function TaskSection({
   page,
   tasks,
   projects,
-  projectFilter,
-  onProjectFilterChange,
+  tags,
+  filterCriteria,
+  onFilterChange,
+  onClearFilters,
+  onSelectTag,
   onEdit,
   onDelete,
   onMarkDone,
@@ -68,8 +71,11 @@ export function TaskSection({
   page: string;
   tasks: Task[];
   projects: Project[];
-  projectFilter: TaskProjectFilter;
-  onProjectFilterChange: (value: TaskProjectFilter) => void;
+  tags: TagCount[];
+  filterCriteria: FilterCriteria;
+  onFilterChange: (criteria: FilterCriteria) => void;
+  onClearFilters: () => void;
+  onSelectTag: (tag: string) => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
   onMarkDone: (task: Task) => void;
@@ -88,11 +94,12 @@ export function TaskSection({
           <p className="eyebrow">{title}</p>
           <h3>{loading ? "Syncing with Firestore" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}</h3>
         </div>
-        <ProjectTaskFilter projects={projects} value={projectFilter} onChange={onProjectFilterChange} />
       </div>
 
+      <TaskFilters criteria={filterCriteria} projects={projects} tags={tags} onChange={onFilterChange} onClear={onClearFilters} />
+
       {loading ? <EmptyState title="Loading tasks" message="Reading your user-specific Firestore task collection." /> : null}
-      {!loading && tasks.length === 0 ? <EmptyState title="No tasks here" message={getEmptyMessage(page)} /> : null}
+      {!loading && tasks.length === 0 ? <EmptyState title="No matching tasks" message={getEmptyMessage(page)} /> : null}
 
       <div className="task-list">
         {tasks.map((task) => (
@@ -100,6 +107,7 @@ export function TaskSection({
             key={task.id}
             task={task}
             project={task.projectId ? projectById.get(task.projectId) ?? null : null}
+            onTagClick={onSelectTag}
             onEdit={onEdit}
             onDelete={onDelete}
             onMarkDone={onMarkDone}
@@ -124,6 +132,7 @@ export function TaskRow({
   onArchive,
   onMoveToday,
   onMoveUpcoming,
+  onTagClick,
 }: {
   task: Task;
   project: Project | null;
@@ -134,12 +143,38 @@ export function TaskRow({
   onArchive: (task: Task) => void;
   onMoveToday: (task: Task) => void;
   onMoveUpcoming: (task: Task) => void;
+  onTagClick?: (tag: string) => void;
 }) {
   return (
     <section className={`task-row ${task.status === "done" ? "is-done" : ""}`}>
-      <div className="task-main">
+      <header className="task-card-header">
         <div className="task-title-line">
           <strong>{task.title}</strong>
+        </div>
+
+        <div className="task-primary-actions" aria-label={`Primary actions for ${task.title}`}>
+          {task.status === "done" ? (
+            <button type="button" className="icon-text-button" onClick={() => onUndoDone(task)}>
+              <Undo2 size={16} />
+              Undo
+            </button>
+          ) : (
+            <button type="button" className="icon-text-button" onClick={() => onMarkDone(task)}>
+              <Check size={16} />
+              Done
+            </button>
+          )}
+          <button type="button" className="icon-button task-icon-button" aria-label={`Edit ${task.title}`} onClick={() => onEdit(task)}>
+            <Pencil size={16} />
+          </button>
+          <button type="button" className="icon-button task-icon-button danger" aria-label={`Delete ${task.title}`} onClick={() => onDelete(task)}>
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </header>
+
+      <div className="task-main">
+        <div className="task-meta">
           <em className={`priority ${task.priority}`}>{task.priority}</em>
           <em className={`status-pill ${task.status}`}>{task.status}</em>
           {project ? (
@@ -147,35 +182,18 @@ export function TaskRow({
               {project.name}
             </em>
           ) : null}
-        </div>
-        {task.description ? <p>{task.description}</p> : null}
-        <div className="task-meta">
           {task.dueDate ? <span>Due {task.dueDate}</span> : null}
           <span>{task.estimatedMinutes} min</span>
           <span>{titleCase(task.energyLevel)} energy</span>
           {task.tags.map((tag) => (
-            <span key={tag}>
-              <Tag size={13} />
-              {tag}
-            </span>
+            <TagChip key={tag} tag={tag} onClick={onTagClick} />
           ))}
         </div>
+        {task.description ? <p>{task.description}</p> : null}
         {task.notes ? <small className="task-notes">{task.notes}</small> : null}
       </div>
 
-      <div className="task-actions" aria-label={`Actions for ${task.title}`}>
-        {task.status === "done" ? (
-          <button type="button" className="icon-text-button" onClick={() => onUndoDone(task)}>
-            <Undo2 size={16} />
-            Undo
-          </button>
-        ) : (
-          <button type="button" className="icon-text-button" onClick={() => onMarkDone(task)}>
-            <Check size={16} />
-            Done
-          </button>
-        )}
-
+      <div className="task-actions" aria-label={`Secondary actions for ${task.title}`}>
         {task.status !== "today" ? (
           <button type="button" className="icon-text-button" onClick={() => onMoveToday(task)}>
             <CheckCircle2 size={16} />
@@ -196,13 +214,6 @@ export function TaskRow({
             Archive
           </button>
         ) : null}
-
-        <button type="button" className="icon-button task-icon-button" aria-label={`Edit ${task.title}`} onClick={() => onEdit(task)}>
-          <Pencil size={16} />
-        </button>
-        <button type="button" className="icon-button task-icon-button danger" aria-label={`Delete ${task.title}`} onClick={() => onDelete(task)}>
-          <Trash2 size={16} />
-        </button>
       </div>
     </section>
   );
@@ -328,7 +339,7 @@ export function TaskEditor({
               Tags
               <input
                 value={values.tags}
-                onChange={(event) => setValues({ ...values, tags: event.target.value })}
+                onChange={(event) => setValues({ ...values, tags: normalizeTags(event.target.value).join(", ") })}
                 placeholder="work, health"
               />
             </label>
@@ -388,31 +399,6 @@ export function ProjectSelector({
             {currentProject.name} ({currentProject.status})
           </option>
         ) : null}
-      </select>
-    </label>
-  );
-}
-
-function ProjectTaskFilter({
-  projects,
-  value,
-  onChange,
-}: {
-  projects: Project[];
-  value: TaskProjectFilter;
-  onChange: (value: TaskProjectFilter) => void;
-}) {
-  return (
-    <label className="compact-select">
-      Project filter
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="all">All projects</option>
-        <option value="none">No project</option>
-        {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name}
-          </option>
-        ))}
       </select>
     </label>
   );

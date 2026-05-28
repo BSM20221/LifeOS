@@ -5,6 +5,7 @@ export type TaskStatus = "inbox" | "today" | "upcoming" | "done" | "archived";
 export type EnergyLevel = "low" | "medium" | "high";
 export type ProjectStatus = "active" | "paused" | "completed" | "archived";
 export type ProjectArea = "Study" | "Business" | "Health" | "Client Work" | "Personal" | "Other";
+export type DueDateGroup = "no-due-date" | "overdue" | "today" | "tomorrow" | "this-week" | "later";
 
 export type Task = {
   id: string;
@@ -64,4 +65,39 @@ export type ProjectStats = {
   completedTasks: number;
   totalTasks: number;
   progress: number;
+};
+
+export type FilterCriteria = {
+  searchText?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  projectId?: string | "none";
+  tag?: string;
+  dueDateGroup?: DueDateGroup;
+  energyLevel?: EnergyLevel;
+};
+
+export type SavedFilter = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  query: FilterCriteria;
+  color: string;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+};
+
+export type SavedFilterFormValues = {
+  name: string;
+  description: string;
+  color: string;
+  query: FilterCriteria;
+};
+
+export type TagCount = {
+  tag: string;
+  openTasks: number;
+  completedTasks: number;
+  totalTasks: number;
 };
