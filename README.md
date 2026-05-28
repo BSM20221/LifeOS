@@ -1,6 +1,6 @@
 # LifeOS v2
 
-LifeOS v2 Phase 1 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, and user-specific Firestore task storage.
+LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, and Phase 2 project management.
 
 ## Stack
 
@@ -32,11 +32,24 @@ Tasks are stored under the signed-in user's document:
 users/{uid}/tasks/{taskId}
 ```
 
+Projects are stored under the signed-in user's document:
+
+```text
+users/{uid}/projects/{projectId}
+```
+
 Each task stores:
 
 ```text
 title, description, status, priority, dueDate, tags, estimatedMinutes,
-energyLevel, createdAt, updatedAt, completedAt, notes, userId
+energyLevel, createdAt, updatedAt, completedAt, notes, userId, projectId
+```
+
+Each project stores:
+
+```text
+id, userId, name, description, color, status, area, createdAt,
+updatedAt, archivedAt, completedAt
 ```
 
 Firestore rules in `firestore.rules` allow authenticated users to access only:
@@ -44,6 +57,7 @@ Firestore rules in `firestore.rules` allow authenticated users to access only:
 ```text
 users/{uid}
 users/{uid}/tasks/{taskId}
+users/{uid}/projects/{projectId}
 users/{uid}/settings/main
 ```
 
@@ -66,9 +80,10 @@ Quick capture is available from Dashboard and Inbox. It supports:
 
 - `#tag` for tags
 - `!low`, `!medium`, `!high`, `!urgent` for priority
+- `+ProjectName` for exact project assignment
 
 Example:
 
 ```text
-Draft weekly review #work !high
+Study modal verbs #german !high +German B2
 ```

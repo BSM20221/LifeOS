@@ -2,20 +2,47 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsUserSpace(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read, create, update, delete: if ownsUserSpace(uid);
 
       match /tasks/{taskId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid) && request.resource.data.userId == uid;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid;
+      }
+
+      match /projects/{projectId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.id == projectId;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid
+          && request.resource.data.id == projectId;
       }
 
       match /settings/{settingId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, create, update, delete: if ownsUserSpace(uid) && settingId == "main";
       }
 
       match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if false;
       }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,54 +1,33 @@
 import {
   Archive,
-  ArrowRight,
   CalendarClock,
   Check,
   CheckCircle2,
-  Clock3,
+  FolderKanban,
   Inbox,
   LayoutDashboard,
   LogOut,
-  Pencil,
   Plus,
-  Save,
   Settings,
   ShieldCheck,
   Sparkles,
-  Tag,
-  Trash2,
-  Undo2,
-  X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-  type User,
-} from "firebase/auth";
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-} from "firebase/firestore";
-import { FirebaseError } from "firebase/app";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
+import { starterProjects } from "./constants";
+import { getProjectStats, useUserProjects, useUserTasks } from "./dataHooks";
 import { parseQuickTask } from "./taskParser";
-import type { EnergyLevel, Task, TaskFormValues, TaskPriority, TaskStatus } from "./types";
+import type { Project, ProjectFormValues, ProjectStats, Task, TaskFormValues, TaskStatus } from "./types";
+import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
+import { AuthScreen } from "./components/AuthScreen";
+import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
+import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
+import { QuickCapture, TaskEditor, TaskSection, type TaskProjectFilter } from "./components/TaskComponents";
 
-type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "settings";
+type PageId = "dashboard" | "projects" | "inbox" | "today" | "upcoming" | "settings";
 
 type NavItem = {
   id: PageId;
@@ -56,22 +35,24 @@ type NavItem = {
   icon: LucideIcon;
 };
 
-type EditorState = {
+type TaskEditorState = {
   task: Task | null;
   defaultStatus: TaskStatus;
+  defaultProjectId: string | null;
+};
+
+type ProjectEditorState = {
+  project: Project | null;
 };
 
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "today", label: "Today", icon: CheckCircle2 },
   { id: "upcoming", label: "Upcoming", icon: CalendarClock },
   { id: "settings", label: "Settings", icon: Settings },
 ];
-
-const taskStatuses: TaskStatus[] = ["inbox", "today", "upcoming", "done", "archived"];
-const priorities: TaskPriority[] = ["low", "medium", "high", "urgent"];
-const energyLevels: EnergyLevel[] = ["low", "medium", "high"];
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -97,10 +78,18 @@ export function App() {
 
 function ProtectedLifeOS({ user }: { user: User }) {
   const [activePage, setActivePage] = useState<PageId>(() => getPageFromHash());
-  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [taskEditor, setTaskEditor] = useState<TaskEditorState | null>(null);
+  const [projectEditor, setProjectEditor] = useState<ProjectEditorState | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [taskProjectFilter, setTaskProjectFilter] = useState<TaskProjectFilter>("all");
+  const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
-  const { tasks, loading, error } = useUserTasks(user);
+
+  const taskState = useUserTasks(user);
+  const projectState = useUserProjects(user);
+  const { tasks } = taskState;
+  const { projects } = projectState;
 
   useEffect(() => {
     const handleHashChange = () => setActivePage(getPageFromHash());
@@ -120,28 +109,49 @@ function ProtectedLifeOS({ user }: { user: User }) {
     );
   }, [user]);
 
-  const visibleTasks = useMemo(() => {
-    if (activePage === "dashboard") {
-      return tasks.filter((task) => task.status !== "archived").slice(0, 8);
-    }
-
-    if (activePage === "settings") {
-      return tasks.filter((task) => task.status === "archived");
-    }
-
-    return tasks.filter((task) => task.status === activePage);
-  }, [activePage, tasks]);
+  const selectableProjects = useMemo(
+    () => projects.filter((project) => project.status === "active" || project.status === "paused"),
+    [projects]
+  );
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const statsByProject = useMemo(() => {
+    return projects.reduce<Record<string, ProjectStats>>((stats, project) => {
+      stats[project.id] = getProjectStats(project.id, tasks);
+      return stats;
+    }, {});
+  }, [projects, tasks]);
 
   const openTasks = tasks.filter((task) => !["done", "archived"].includes(task.status));
   const todayTasks = tasks.filter((task) => task.status === "today");
   const doneTasks = tasks.filter((task) => task.status === "done");
-  const urgentTasks = openTasks.filter((task) => task.priority === "urgent" || task.priority === "high");
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
-  const nextTask = urgentTasks[0] ?? todayTasks[0] ?? openTasks[0] ?? null;
+  const nextTask = openTasks.find((task) => task.priority === "urgent" || task.priority === "high") ?? todayTasks[0] ?? openTasks[0] ?? null;
   const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? "Dashboard";
+  const defaultCreateStatus: TaskStatus = activePage === "today" || activePage === "upcoming" || activePage === "inbox" ? activePage : "inbox";
+
+  const visibleTasks = useMemo(() => {
+    const baseTasks =
+      activePage === "dashboard"
+        ? tasks.filter((task) => task.status !== "archived").slice(0, 8)
+        : activePage === "settings"
+          ? tasks.filter((task) => task.status === "archived")
+          : activePage === "projects"
+            ? []
+            : tasks.filter((task) => task.status === activePage);
+
+    if (taskProjectFilter === "all") {
+      return baseTasks;
+    }
+
+    if (taskProjectFilter === "none") {
+      return baseTasks.filter((task) => !task.projectId);
+    }
+
+    return baseTasks.filter((task) => task.projectId === taskProjectFilter);
+  }, [activePage, taskProjectFilter, tasks]);
 
   async function createTaskFromQuick(rawInput: string, defaultStatus: TaskStatus) {
-    const parsed = parseQuickTask(rawInput);
+    const parsed = parseQuickTask(rawInput, selectableProjects);
     if (!parsed.title) {
       throw new Error("Add a task title before saving.");
     }
@@ -160,7 +170,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
       completedAt: null,
       notes: "",
       userId: user.uid,
+      projectId: parsed.projectId,
     });
+
+    if (parsed.unresolvedProjectName) {
+      setActionMessage(`Task saved. Project "${parsed.unresolvedProjectName}" was not found, so it was saved without a project.`);
+    } else if (parsed.projectName) {
+      setActionMessage(`Task saved to ${parsed.projectName}.`);
+    } else {
+      setActionMessage("Task saved.");
+    }
   }
 
   async function saveTask(values: TaskFormValues, task: Task | null) {
@@ -191,12 +210,10 @@ function ProtectedLifeOS({ user }: { user: User }) {
       setActionMessage("Task created.");
     }
 
-    setEditor(null);
+    setTaskEditor(null);
   }
 
-  async function updateTask(task: Task, updates: Partial<Omit<Task, "id" | "createdAt" | "updatedAt">>) {
-    setActionError("");
-    setActionMessage("");
+  async function updateTask(task: Task, updates: Record<string, unknown>) {
     await updateDoc(doc(db, "users", user.uid, "tasks", task.id), {
       ...updates,
       updatedAt: serverTimestamp(),
@@ -209,23 +226,122 @@ function ProtectedLifeOS({ user }: { user: User }) {
       return;
     }
 
-    setActionError("");
     await deleteDoc(doc(db, "users", user.uid, "tasks", task.id));
-    setActionMessage("Task deleted.");
   }
 
-  async function runTaskAction(action: () => Promise<void>, successMessage: string) {
+  async function saveProject(values: ProjectFormValues, project: Project | null) {
+    const cleanName = values.name.trim();
+    if (!cleanName) {
+      throw new Error("Project name is required.");
+    }
+
+    const now = getNowISOString();
+    const payload = {
+      name: cleanName,
+      description: values.description.trim(),
+      color: values.color,
+      status: values.status,
+      area: values.area,
+      archivedAt: values.status === "archived" ? project?.archivedAt ?? now : null,
+      completedAt: values.status === "completed" ? project?.completedAt ?? now : null,
+    };
+
+    if (project) {
+      await updateDoc(doc(db, "users", user.uid, "projects", project.id), {
+        ...payload,
+        id: project.id,
+        userId: user.uid,
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Project updated.");
+    } else {
+      const projectRef = doc(collection(db, "users", user.uid, "projects"));
+      await setDoc(projectRef, {
+        ...payload,
+        id: projectRef.id,
+        userId: user.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Project created.");
+      setSelectedProjectId(projectRef.id);
+      window.location.hash = "projects";
+    }
+
+    setProjectEditor(null);
+  }
+
+  async function createStarterProjects() {
+    if (projects.length > 0) {
+      setActionMessage("Starter projects are only offered when you have zero projects.");
+      return;
+    }
+
+    setCreatingStarterProjects(true);
+    await runAction(async () => {
+      const batch = writeBatch(db);
+      starterProjects.forEach((starterProject) => {
+        const projectRef = doc(collection(db, "users", user.uid, "projects"));
+        batch.set(projectRef, {
+          id: projectRef.id,
+          userId: user.uid,
+          name: starterProject.name,
+          description: starterProject.description,
+          color: starterProject.color,
+          status: "active",
+          area: starterProject.area,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          archivedAt: null,
+          completedAt: null,
+        });
+      });
+      await batch.commit();
+    }, "Starter projects created.");
+    setCreatingStarterProjects(false);
+  }
+
+  async function updateProject(project: Project, updates: Record<string, unknown>) {
+    await updateDoc(doc(db, "users", user.uid, "projects", project.id), {
+      ...updates,
+      id: project.id,
+      userId: user.uid,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function deleteProject(project: Project) {
+    const assignedTasks = tasks.filter((task) => task.projectId === project.id);
+    const confirmed = window.confirm(
+      `Permanently delete "${project.name}"? This will remove the project and unassign ${assignedTasks.length} task(s). This cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const batch = writeBatch(db);
+    assignedTasks.forEach((task) => {
+      batch.update(doc(db, "users", user.uid, "tasks", task.id), {
+        projectId: null,
+        updatedAt: serverTimestamp(),
+        userId: user.uid,
+      });
+    });
+    batch.delete(doc(db, "users", user.uid, "projects", project.id));
+    await batch.commit();
+    setSelectedProjectId(null);
+  }
+
+  async function runAction(action: () => Promise<void>, successMessage: string) {
     try {
       setActionError("");
       setActionMessage("");
       await action();
       setActionMessage(successMessage);
-    } catch (taskActionError) {
-      setActionError(getFriendlyError(taskActionError));
+    } catch (error) {
+      setActionError(getFriendlyError(error));
     }
   }
-
-  const defaultCreateStatus: TaskStatus = activePage === "today" || activePage === "upcoming" || activePage === "inbox" ? activePage : "inbox";
 
   return (
     <main className="app-shell">
@@ -233,7 +349,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         <div className="brand-row">
           <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
           <div>
-            <p className="eyebrow">Phase 1 workspace</p>
+            <p className="eyebrow">Phase 2 workspace</p>
             <h1>LifeOS v2</h1>
           </div>
         </div>
@@ -267,15 +383,27 @@ function ProtectedLifeOS({ user }: { user: User }) {
             <p className="eyebrow">{pageTitle}</p>
             <h2>{getPageHeadline(activePage)}</h2>
           </div>
-          <button className="primary-button" type="button" onClick={() => setEditor({ task: null, defaultStatus: defaultCreateStatus })}>
-            <Plus size={18} />
-            New task
-          </button>
+          {activePage === "projects" ? (
+            <button className="primary-button" type="button" onClick={() => setProjectEditor({ project: null })}>
+              <Plus size={18} />
+              New project
+            </button>
+          ) : (
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => setTaskEditor({ task: null, defaultStatus: defaultCreateStatus, defaultProjectId: null })}
+            >
+              <Plus size={18} />
+              New task
+            </button>
+          )}
         </header>
 
         {actionError ? <StatusBanner tone="error" message={actionError} /> : null}
         {actionMessage ? <StatusBanner tone="success" message={actionMessage} /> : null}
-        {error ? <StatusBanner tone="error" message={error} /> : null}
+        {taskState.error ? <StatusBanner tone="error" message={taskState.error} /> : null}
+        {projectState.error ? <StatusBanner tone="error" message={projectState.error} /> : null}
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -285,220 +413,241 @@ function ProtectedLifeOS({ user }: { user: User }) {
             todayTasks={todayTasks}
             doneTasks={doneTasks}
             completionRate={completionRate}
+            projects={projects}
+            statsByProject={statsByProject}
             onQuickCreate={(value) => createTaskFromQuick(value, "inbox")}
           />
         ) : null}
 
+        {activePage === "projects" ? (
+          <ProjectsPage
+            projects={projects}
+            tasks={tasks}
+            statsByProject={statsByProject}
+            loading={projectState.loading}
+            selectedProjectId={selectedProjectId}
+            creatingStarterProjects={creatingStarterProjects}
+            onSelectProject={setSelectedProjectId}
+            onCreateProject={() => setProjectEditor({ project: null })}
+            onCreateStarterProjects={() => void createStarterProjects()}
+            onEditProject={(project) => setProjectEditor({ project })}
+            onAddTask={(project) => setTaskEditor({ task: null, defaultStatus: "inbox", defaultProjectId: project.id })}
+            onArchiveProject={(project) =>
+              void runAction(
+                () => updateProject(project, { status: "archived", archivedAt: getNowISOString(), completedAt: null }),
+                "Project archived."
+              )
+            }
+            onUnarchiveProject={(project) =>
+              void runAction(() => updateProject(project, { status: "active", archivedAt: null, completedAt: null }), "Project reactivated.")
+            }
+            onCompleteProject={(project) =>
+              void runAction(
+                () => updateProject(project, { status: "completed", completedAt: getNowISOString(), archivedAt: null }),
+                "Project completed."
+              )
+            }
+            onReactivateProject={(project) =>
+              void runAction(() => updateProject(project, { status: "active", completedAt: null, archivedAt: null }), "Project reactivated.")
+            }
+            onDeleteProject={(project) => void runAction(() => deleteProject(project), "Project deleted. Assigned tasks were unassigned.")}
+          />
+        ) : null}
+
         {activePage === "inbox" ? (
-          <PagePanel title="Inbox capture" description="Collect loose tasks first, then clarify them into today or upcoming.">
+          <PagePanel title="Inbox capture" description="Collect loose tasks first, then clarify them into today, upcoming, or a project.">
             <QuickCapture label="Add to Inbox" onCreate={(value) => createTaskFromQuick(value, "inbox")} />
           </PagePanel>
         ) : null}
 
-        {activePage === "settings" ? (
-          <SettingsPage user={user} tasks={tasks} />
-        ) : null}
+        {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} /> : null}
 
-        <TaskSection
-          loading={loading}
-          page={activePage}
-          tasks={visibleTasks}
-          onEdit={(task) => setEditor({ task, defaultStatus: task.status })}
-          onDelete={(task) => void runTaskAction(() => deleteTask(task), "Task deleted.")}
-          onMarkDone={(task) =>
-            void runTaskAction(
-              () => updateTask(task, { status: "done", completedAt: serverTimestamp() as Task["completedAt"] }),
-              "Task marked done."
-            )
-          }
-          onUndoDone={(task) =>
-            void runTaskAction(() => updateTask(task, { status: "today", completedAt: null }), "Task moved back to Today.")
-          }
-          onArchive={(task) => void runTaskAction(() => updateTask(task, { status: "archived" }), "Task archived.")}
-          onMoveToday={(task) =>
-            void runTaskAction(
-              () => updateTask(task, { status: "today", dueDate: getTodayISODate(), completedAt: null }),
-              "Task moved to Today."
-            )
-          }
-          onMoveUpcoming={(task) =>
-            void runTaskAction(() => updateTask(task, { status: "upcoming", completedAt: null }), "Task moved to Upcoming.")
-          }
-        />
+        {activePage !== "projects" ? (
+          <TaskSection
+            loading={taskState.loading}
+            page={activePage}
+            tasks={visibleTasks}
+            projects={projects}
+            projectFilter={taskProjectFilter}
+            onProjectFilterChange={setTaskProjectFilter}
+            onEdit={(task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId })}
+            onDelete={(task) => void runAction(() => deleteTask(task), "Task deleted.")}
+            onMarkDone={(task) =>
+              void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.")
+            }
+            onUndoDone={(task) =>
+              void runAction(() => updateTask(task, { status: "today", completedAt: null }), "Task moved back to Today.")
+            }
+            onArchive={(task) => void runAction(() => updateTask(task, { status: "archived" }), "Task archived.")}
+            onMoveToday={(task) =>
+              void runAction(
+                () => updateTask(task, { status: "today", dueDate: getTodayISODate(), completedAt: null }),
+                "Task moved to Today."
+              )
+            }
+            onMoveUpcoming={(task) =>
+              void runAction(() => updateTask(task, { status: "upcoming", completedAt: null }), "Task moved to Upcoming.")
+            }
+          />
+        ) : null}
       </section>
 
-      {editor ? (
+      {taskEditor ? (
         <TaskEditor
-          task={editor.task}
-          defaultStatus={editor.defaultStatus}
-          onClose={() => setEditor(null)}
-          onSave={(values) => saveTask(values, editor.task)}
+          task={taskEditor.task}
+          projects={projects}
+          defaultStatus={taskEditor.defaultStatus}
+          defaultProjectId={taskEditor.defaultProjectId}
+          onClose={() => setTaskEditor(null)}
+          onSave={(values) => saveTask(values, taskEditor.task)}
         />
+      ) : null}
+
+      {projectEditor ? (
+        <ProjectForm project={projectEditor.project} onClose={() => setProjectEditor(null)} onSave={(values) => saveProject(values, projectEditor.project)} />
       ) : null}
     </main>
   );
-}
 
-function AuthScreen() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  function DashboardPage({
+    nextTask,
+    tasks,
+    openTasks,
+    todayTasks,
+    doneTasks,
+    completionRate,
+    projects,
+    statsByProject,
+    onQuickCreate,
+  }: {
+    nextTask: Task | null;
+    tasks: Task[];
+    openTasks: Task[];
+    todayTasks: Task[];
+    doneTasks: Task[];
+    completionRate: number;
+    projects: Project[];
+    statsByProject: Record<string, ProjectStats>;
+    onQuickCreate: (value: string) => Promise<void>;
+  }) {
+    const activeProjects = projects.filter((project) => project.status === "active" || project.status === "paused");
+    const topProjects = [...activeProjects]
+      .sort((left, right) => (statsByProject[right.id]?.openTasks ?? 0) - (statsByProject[left.id]?.openTasks ?? 0))
+      .slice(0, 3);
+    const recentProjects = [...projects].slice(0, 3);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
+    return (
+      <>
+        <section className="hero-band">
+          <div className="hero-copy">
+            <p className="eyebrow">Next best action</p>
+            <h3>{nextTask?.title ?? "Capture the first task"}</h3>
+            <p>
+              {nextTask
+                ? `${projectById.get(nextTask.projectId ?? "")?.name ?? "No project"} - ${nextTask.priority} priority.`
+                : "Your Firestore task list is empty. Add one below or create starter projects."}
+            </p>
+            <QuickCapture label="Quick capture" onCreate={onQuickCreate} />
+          </div>
+          <div className="hero-stat" aria-label="Completion rate">
+            <span>{completionRate}%</span>
+            <small>task completion</small>
+          </div>
+        </section>
 
-    try {
-      if (mode === "signup") {
-        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        const cleanName = displayName.trim();
-        if (cleanName) {
-          await updateProfile(credential.user, { displayName: cleanName });
-        }
+        <section className="metrics-grid" aria-label="Task and project metrics">
+          <MetricCard icon={Inbox} label="Open tasks" value={String(openTasks.length)} detail="Inbox, Today, Upcoming" />
+          <MetricCard icon={CheckCircle2} label="Today" value={String(todayTasks.length)} detail="Scheduled for now" />
+          <MetricCard icon={FolderKanban} label="Active projects" value={String(activeProjects.length)} detail="Active or paused" />
+          <MetricCard icon={Check} label="Done" value={String(doneTasks.length)} detail={`${tasks.length} total tasks`} />
+        </section>
 
-        await setDoc(
-          doc(db, "users", credential.user.uid),
-          {
-            email: credential.user.email ?? email.trim(),
-            displayName: cleanName,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
-      }
-    } catch (authError) {
-      setError(getFriendlyError(authError));
-    } finally {
-      setSubmitting(false);
-    }
+        <section className="content-grid dashboard-project-grid">
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Projects</p>
+                <h3>Top projects by open tasks</h3>
+              </div>
+              <a className="secondary-button" href="#projects">
+                <FolderKanban size={17} />
+                Projects
+              </a>
+            </div>
+            {topProjects.length === 0 ? (
+              <EmptyState title="No active projects" message="Create a project or add the starter project set from the Projects page." />
+            ) : (
+              <div className="dashboard-project-list">
+                {topProjects.map((project) => (
+                  <ProjectSummaryRow key={project.id} project={project} stats={statsByProject[project.id]} />
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Recently updated</p>
+                <h3>Project movement</h3>
+              </div>
+              <Sparkles size={20} />
+            </div>
+            {recentProjects.length === 0 ? (
+              <EmptyState title="No project updates" message="Project updates will appear here after creation or editing." />
+            ) : (
+              <div className="dashboard-project-list">
+                {recentProjects.map((project) => (
+                  <ProjectSummaryRow key={project.id} project={project} stats={statsByProject[project.id]} showDate />
+                ))}
+              </div>
+            )}
+          </article>
+        </section>
+      </>
+    );
   }
 
+  function ProjectSummaryRow({ project, stats, showDate = false }: { project: Project; stats?: ProjectStats; showDate?: boolean }) {
+    const safeStats = stats ?? { openTasks: 0, completedTasks: 0, totalTasks: 0, progress: 0 };
+    return (
+      <button
+        className="project-summary-row"
+        type="button"
+        onClick={() => {
+          setSelectedProjectId(project.id);
+          window.location.hash = "projects";
+        }}
+        style={{ "--project-color": project.color } as CSSProperties}
+      >
+        <span className="project-color-dot" />
+        <span>
+          <strong>{project.name}</strong>
+          <small>{showDate ? formatProjectDate(project.updatedAt) : `${safeStats.openTasks} open / ${safeStats.completedTasks} done`}</small>
+        </span>
+        <em>{safeStats.progress}%</em>
+      </button>
+    );
+  }
+}
+
+function PagePanel({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return (
-    <main className="auth-shell">
-      <section className="auth-panel">
-        <div className="brand-row">
-          <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
-          <div>
-            <p className="eyebrow">Secure workspace</p>
-            <h1>LifeOS v2</h1>
-          </div>
+    <article className="panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">{title}</p>
+          <h3>{description}</h3>
         </div>
-
-        <div className="auth-copy">
-          <h2>{mode === "login" ? "Log in to your LifeOS." : "Create your LifeOS account."}</h2>
-          <p>Tasks are stored in your authenticated Firestore user space and never shown before sign-in.</p>
-        </div>
-
-        <div className="segmented-control" aria-label="Authentication mode">
-          <button className={mode === "login" ? "active" : ""} type="button" onClick={() => setMode("login")}>
-            Login
-          </button>
-          <button className={mode === "signup" ? "active" : ""} type="button" onClick={() => setMode("signup")}>
-            Signup
-          </button>
-        </div>
-
-        <form className="auth-form" onSubmit={handleSubmit}>
-          {mode === "signup" ? (
-            <label>
-              Name
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Optional" />
-            </label>
-          ) : null}
-
-          <label>
-            Email
-            <input
-              autoComplete="email"
-              required
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-            />
-          </label>
-
-          <label>
-            Password
-            <input
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              minLength={6}
-              required
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="At least 6 characters"
-            />
-          </label>
-
-          {error ? <StatusBanner tone="error" message={error} /> : null}
-
-          <button className="primary-button full-width" disabled={submitting} type="submit">
-            <ArrowRight size={18} />
-            {submitting ? "Working..." : mode === "login" ? "Login" : "Create account"}
-          </button>
-        </form>
-      </section>
-    </main>
+      </div>
+      {children}
+    </article>
   );
 }
 
-function DashboardPage({
-  nextTask,
-  tasks,
-  openTasks,
-  todayTasks,
-  doneTasks,
-  completionRate,
-  onQuickCreate,
-}: {
-  nextTask: Task | null;
-  tasks: Task[];
-  openTasks: Task[];
-  todayTasks: Task[];
-  doneTasks: Task[];
-  completionRate: number;
-  onQuickCreate: (value: string) => Promise<void>;
-}) {
-  const archivedCount = tasks.filter((task) => task.status === "archived").length;
-
-  return (
-    <>
-      <section className="hero-band">
-        <div className="hero-copy">
-          <p className="eyebrow">Next best action</p>
-          <h3>{nextTask?.title ?? "Capture the first task"}</h3>
-          <p>
-            {nextTask?.description ||
-              (nextTask ? `Priority: ${titleCase(nextTask.priority)}. Status: ${titleCase(nextTask.status)}.` : "Your Firestore task list is empty. Add one below to start Phase 1.")}
-          </p>
-          <QuickCapture label="Quick capture" onCreate={onQuickCreate} />
-        </div>
-        <div className="hero-stat" aria-label="Completion rate">
-          <span>{completionRate}%</span>
-          <small>task completion</small>
-        </div>
-      </section>
-
-      <section className="metrics-grid" aria-label="Task metrics">
-        <MetricCard icon={Inbox} label="Open tasks" value={String(openTasks.length)} detail="Inbox, Today, Upcoming" />
-        <MetricCard icon={CheckCircle2} label="Today" value={String(todayTasks.length)} detail="Scheduled for now" />
-        <MetricCard icon={Check} label="Done" value={String(doneTasks.length)} detail="Completed tasks" />
-        <MetricCard icon={Archive} label="Archived" value={String(archivedCount)} detail="Stored out of view" />
-      </section>
-    </>
-  );
-}
-
-function SettingsPage({ user, tasks }: { user: User; tasks: Task[] }) {
+function SettingsPage({ user, tasks, projects }: { user: User; tasks: Task[]; projects: Project[] }) {
   const openCount = tasks.filter((task) => !["done", "archived"].includes(task.status)).length;
+  const activeProjectCount = projects.filter((project) => project.status === "active" || project.status === "paused").length;
   const configuredCount = firebaseEnvStatus.filter((item) => item.configured).length;
 
   return (
@@ -523,6 +672,10 @@ function SettingsPage({ user, tasks }: { user: User; tasks: Task[] }) {
           <div>
             <dt>Open tasks</dt>
             <dd>{openCount}</dd>
+          </div>
+          <div>
+            <dt>Active projects</dt>
+            <dd>{activeProjectCount}</dd>
           </div>
         </dl>
       </article>
@@ -550,427 +703,6 @@ function SettingsPage({ user, tasks }: { user: User; tasks: Task[] }) {
   );
 }
 
-function PagePanel({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return (
-    <article className="panel">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">{title}</p>
-          <h3>{description}</h3>
-        </div>
-      </div>
-      {children}
-    </article>
-  );
-}
-
-function TaskSection({
-  loading,
-  page,
-  tasks,
-  onEdit,
-  onDelete,
-  onMarkDone,
-  onUndoDone,
-  onArchive,
-  onMoveToday,
-  onMoveUpcoming,
-}: {
-  loading: boolean;
-  page: PageId;
-  tasks: Task[];
-  onEdit: (task: Task) => void;
-  onDelete: (task: Task) => void;
-  onMarkDone: (task: Task) => void;
-  onUndoDone: (task: Task) => void;
-  onArchive: (task: Task) => void;
-  onMoveToday: (task: Task) => void;
-  onMoveUpcoming: (task: Task) => void;
-}) {
-  const title = page === "settings" ? "Archived tasks" : page === "dashboard" ? "Recent tasks" : `${titleCase(page)} tasks`;
-
-  return (
-    <article className="panel task-panel">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">{title}</p>
-          <h3>{loading ? "Syncing with Firestore" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}</h3>
-        </div>
-        <Clock3 size={20} />
-      </div>
-
-      {loading ? <EmptyState title="Loading tasks" message="Reading your user-specific Firestore task collection." /> : null}
-      {!loading && tasks.length === 0 ? <EmptyState title="No tasks here" message={getEmptyMessage(page)} /> : null}
-
-      <div className="task-list">
-        {tasks.map((task) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onMarkDone={onMarkDone}
-            onUndoDone={onUndoDone}
-            onArchive={onArchive}
-            onMoveToday={onMoveToday}
-            onMoveUpcoming={onMoveUpcoming}
-          />
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function TaskRow({
-  task,
-  onEdit,
-  onDelete,
-  onMarkDone,
-  onUndoDone,
-  onArchive,
-  onMoveToday,
-  onMoveUpcoming,
-}: {
-  task: Task;
-  onEdit: (task: Task) => void;
-  onDelete: (task: Task) => void;
-  onMarkDone: (task: Task) => void;
-  onUndoDone: (task: Task) => void;
-  onArchive: (task: Task) => void;
-  onMoveToday: (task: Task) => void;
-  onMoveUpcoming: (task: Task) => void;
-}) {
-  return (
-    <section className={`task-row ${task.status === "done" ? "is-done" : ""}`}>
-      <div className="task-main">
-        <div className="task-title-line">
-          <strong>{task.title}</strong>
-          <em className={`priority ${task.priority}`}>{task.priority}</em>
-          <em className={`status-pill ${task.status}`}>{task.status}</em>
-        </div>
-        {task.description ? <p>{task.description}</p> : null}
-        <div className="task-meta">
-          {task.dueDate ? <span>Due {task.dueDate}</span> : null}
-          <span>{task.estimatedMinutes} min</span>
-          <span>{titleCase(task.energyLevel)} energy</span>
-          {task.tags.map((tag) => (
-            <span key={tag}>
-              <Tag size={13} />
-              {tag}
-            </span>
-          ))}
-        </div>
-        {task.notes ? <small className="task-notes">{task.notes}</small> : null}
-      </div>
-
-      <div className="task-actions" aria-label={`Actions for ${task.title}`}>
-        {task.status === "done" ? (
-          <button type="button" className="icon-text-button" onClick={() => onUndoDone(task)}>
-            <Undo2 size={16} />
-            Undo
-          </button>
-        ) : (
-          <button type="button" className="icon-text-button" onClick={() => onMarkDone(task)}>
-            <Check size={16} />
-            Done
-          </button>
-        )}
-
-        {task.status !== "today" ? (
-          <button type="button" className="icon-text-button" onClick={() => onMoveToday(task)}>
-            <CheckCircle2 size={16} />
-            Today
-          </button>
-        ) : null}
-
-        {task.status !== "upcoming" ? (
-          <button type="button" className="icon-text-button" onClick={() => onMoveUpcoming(task)}>
-            <CalendarClock size={16} />
-            Upcoming
-          </button>
-        ) : null}
-
-        {task.status !== "archived" ? (
-          <button type="button" className="icon-text-button" onClick={() => onArchive(task)}>
-            <Archive size={16} />
-            Archive
-          </button>
-        ) : null}
-
-        <button type="button" className="icon-button task-icon-button" aria-label={`Edit ${task.title}`} onClick={() => onEdit(task)}>
-          <Pencil size={16} />
-        </button>
-        <button type="button" className="icon-button task-icon-button danger" aria-label={`Delete ${task.title}`} onClick={() => onDelete(task)}>
-          <Trash2 size={16} />
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function TaskEditor({
-  task,
-  defaultStatus,
-  onClose,
-  onSave,
-}: {
-  task: Task | null;
-  defaultStatus: TaskStatus;
-  onClose: () => void;
-  onSave: (values: TaskFormValues) => Promise<void>;
-}) {
-  const [values, setValues] = useState<TaskFormValues>(() => taskToFormValues(task, defaultStatus));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
-
-    try {
-      await onSave(values);
-    } catch (saveError) {
-      setError(getFriendlyError(saveError));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">{task ? "Edit task" : "Create task"}</p>
-            <h3 id="task-editor-title">{task ? task.title : "New task"}</h3>
-          </div>
-          <button type="button" className="icon-button task-icon-button" aria-label="Close editor" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <form className="task-form" onSubmit={handleSubmit}>
-          <label>
-            Title
-            <input required value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} />
-          </label>
-
-          <label>
-            Description
-            <textarea value={values.description} onChange={(event) => setValues({ ...values, description: event.target.value })} />
-          </label>
-
-          <div className="form-grid">
-            <label>
-              Status
-              <select
-                value={values.status}
-                onChange={(event) => setValues({ ...values, status: event.target.value as TaskStatus })}
-              >
-                {taskStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {titleCase(status)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Priority
-              <select
-                value={values.priority}
-                onChange={(event) => setValues({ ...values, priority: event.target.value as TaskPriority })}
-              >
-                {priorities.map((priority) => (
-                  <option key={priority} value={priority}>
-                    {titleCase(priority)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Due date
-              <input type="date" value={values.dueDate} onChange={(event) => setValues({ ...values, dueDate: event.target.value })} />
-            </label>
-
-            <label>
-              Estimate
-              <input
-                min="0"
-                type="number"
-                value={values.estimatedMinutes}
-                onChange={(event) => setValues({ ...values, estimatedMinutes: event.target.value })}
-              />
-            </label>
-
-            <label>
-              Energy
-              <select
-                value={values.energyLevel}
-                onChange={(event) => setValues({ ...values, energyLevel: event.target.value as EnergyLevel })}
-              >
-                {energyLevels.map((energy) => (
-                  <option key={energy} value={energy}>
-                    {titleCase(energy)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Tags
-              <input
-                value={values.tags}
-                onChange={(event) => setValues({ ...values, tags: event.target.value })}
-                placeholder="work, health"
-              />
-            </label>
-          </div>
-
-          <label>
-            Notes
-            <textarea value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} />
-          </label>
-
-          {error ? <StatusBanner tone="error" message={error} /> : null}
-
-          <div className="modal-actions">
-            <button className="secondary-button" type="button" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="primary-button" disabled={saving} type="submit">
-              <Save size={18} />
-              {saving ? "Saving..." : "Save task"}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
-  );
-}
-
-function QuickCapture({ label, onCreate }: { label: string; onCreate: (value: string) => Promise<void> }) {
-  const [value, setValue] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
-
-    try {
-      await onCreate(value);
-      setValue("");
-    } catch (quickError) {
-      setError(getFriendlyError(quickError));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form className="quick-add" onSubmit={handleSubmit}>
-      <input
-        aria-label={label}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Capture a task with #tag and !high"
-      />
-      <button type="submit" aria-label={label} disabled={submitting}>
-        <Plus size={18} />
-      </button>
-      {error ? <span className="inline-error">{error}</span> : null}
-    </form>
-  );
-}
-
-function MetricCard({ icon: Icon, label, value, detail }: { icon: LucideIcon; label: string; value: string; detail: string }) {
-  return (
-    <article className="metric-card">
-      <div className="metric-icon">
-        <Icon size={20} />
-      </div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </article>
-  );
-}
-
-function StatusBanner({ tone, message }: { tone: "error" | "success"; message: string }) {
-  return <div className={`status-banner ${tone}`}>{message}</div>;
-}
-
-function EmptyState({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="empty-state">
-      <strong>{title}</strong>
-      <span>{message}</span>
-    </div>
-  );
-}
-
-function FullScreenState({ title, message }: { title: string; message: string }) {
-  return (
-    <main className="auth-shell">
-      <section className="auth-panel compact">
-        <Sparkles size={28} />
-        <h1>{title}</h1>
-        <p>{message}</p>
-      </section>
-    </main>
-  );
-}
-
-function useUserTasks(user: User) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setLoading(true);
-    setError("");
-
-    const taskQuery = query(collection(db, "users", user.uid, "tasks"), orderBy("createdAt", "desc"));
-    return onSnapshot(
-      taskQuery,
-      (snapshot) => {
-        setTasks(snapshot.docs.map(mapTaskDocument));
-        setLoading(false);
-      },
-      (snapshotError) => {
-        setError(getFriendlyError(snapshotError));
-        setLoading(false);
-      }
-    );
-  }, [user.uid]);
-
-  return { tasks, loading, error };
-}
-
-function mapTaskDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
-  const data = snapshot.data();
-  return {
-    id: snapshot.id,
-    title: String(data.title ?? "Untitled task"),
-    description: String(data.description ?? ""),
-    status: isTaskStatus(data.status) ? data.status : "inbox",
-    priority: isTaskPriority(data.priority) ? data.priority : "medium",
-    dueDate: String(data.dueDate ?? ""),
-    tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
-    estimatedMinutes: Number(data.estimatedMinutes ?? 25),
-    energyLevel: isEnergyLevel(data.energyLevel) ? data.energyLevel : "medium",
-    createdAt: data.createdAt ?? null,
-    updatedAt: data.updatedAt ?? null,
-    completedAt: data.completedAt ?? null,
-    notes: String(data.notes ?? ""),
-    userId: String(data.userId ?? ""),
-  };
-}
-
 function normalizeTaskForm(values: TaskFormValues) {
   return {
     title: values.title.trim(),
@@ -985,20 +717,7 @@ function normalizeTaskForm(values: TaskFormValues) {
     estimatedMinutes: Math.max(0, Number(values.estimatedMinutes || 0)),
     energyLevel: values.energyLevel,
     notes: values.notes.trim(),
-  };
-}
-
-function taskToFormValues(task: Task | null, defaultStatus: TaskStatus): TaskFormValues {
-  return {
-    title: task?.title ?? "",
-    description: task?.description ?? "",
-    status: task?.status ?? defaultStatus,
-    priority: task?.priority ?? "medium",
-    dueDate: task?.dueDate ?? "",
-    tags: task?.tags.join(", ") ?? "",
-    estimatedMinutes: String(task?.estimatedMinutes ?? 25),
-    energyLevel: task?.energyLevel ?? "medium",
-    notes: task?.notes ?? "",
+    projectId: values.projectId || null,
   };
 }
 
@@ -1010,7 +729,9 @@ function getPageFromHash(): PageId {
 function getPageHeadline(page: PageId) {
   switch (page) {
     case "dashboard":
-      return "A Firestore-backed command center for what needs attention.";
+      return "A Firestore-backed command center for tasks and projects.";
+    case "projects":
+      return "Plan outcomes, track progress, and connect tasks to real work.";
     case "inbox":
       return "Capture raw tasks quickly and clarify them later.";
     case "today":
@@ -1020,70 +741,4 @@ function getPageHeadline(page: PageId) {
     case "settings":
       return "Confirm account, Firebase, and archived task state.";
   }
-}
-
-function getEmptyMessage(page: PageId) {
-  switch (page) {
-    case "dashboard":
-      return "Create a task from the quick capture field to populate your dashboard.";
-    case "inbox":
-      return "Quick capture tasks here before moving them to Today or Upcoming.";
-    case "today":
-      return "Move a task to Today when it is ready for action.";
-    case "upcoming":
-      return "Move a task to Upcoming when it needs future attention.";
-    case "settings":
-      return "Archived tasks will appear here.";
-  }
-}
-
-function getFriendlyError(error: unknown) {
-  if (error instanceof FirebaseError) {
-    switch (error.code) {
-      case "auth/email-already-in-use":
-        return "That email already has an account. Try logging in instead.";
-      case "auth/invalid-credential":
-      case "auth/wrong-password":
-      case "auth/user-not-found":
-        return "The email or password does not match an account.";
-      case "auth/weak-password":
-        return "Use a stronger password with at least six characters.";
-      case "auth/invalid-email":
-        return "Enter a valid email address.";
-      case "permission-denied":
-      case "firestore/permission-denied":
-        return "Firestore rejected the request. Check that you are signed in and your rules are deployed.";
-      default:
-        return error.message;
-    }
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Something went wrong. Try again.";
-}
-
-function isTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === "string" && taskStatuses.includes(value as TaskStatus);
-}
-
-function isTaskPriority(value: unknown): value is TaskPriority {
-  return typeof value === "string" && priorities.includes(value as TaskPriority);
-}
-
-function isEnergyLevel(value: unknown): value is EnergyLevel {
-  return typeof value === "string" && energyLevels.includes(value as EnergyLevel);
-}
-
-function getTodayISODate() {
-  const today = new Date();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  return `${today.getFullYear()}-${month}-${day}`;
-}
-
-function titleCase(value: string) {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
