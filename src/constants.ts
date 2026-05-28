@@ -1,9 +1,11 @@
-import type { DueDateGroup, EnergyLevel, FilterCriteria, ProjectArea, ProjectStatus, TaskPriority, TaskStatus } from "./types";
+import type { DueDateGroup, EnergyLevel, FilterCriteria, ProjectArea, ProjectStatus, TaskPriority, TaskStatus, TimeBlockType, MoodLevel } from "./types";
 
 export const taskStatuses: TaskStatus[] = ["inbox", "today", "upcoming", "done", "archived"];
 export const priorities: TaskPriority[] = ["low", "medium", "high", "urgent"];
 export const energyLevels: EnergyLevel[] = ["low", "medium", "high"];
 export const dueDateGroups: DueDateGroup[] = ["no-due-date", "overdue", "today", "tomorrow", "this-week", "later"];
+export const timeBlockTypes: TimeBlockType[] = ["deep-work", "study", "admin", "health", "break", "personal", "other"];
+export const moodLevels: MoodLevel[] = ["low", "okay", "good", "great"];
 
 export const projectStatuses: ProjectStatus[] = ["active", "paused", "completed", "archived"];
 export const projectAreas: ProjectArea[] = ["Study", "Business", "Health", "Client Work", "Personal", "Other"];

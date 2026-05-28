@@ -1,6 +1,6 @@
 # LifeOS v2
 
-LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, project management, tags, and saved task views.
+LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, project management, tags, saved task views, and daily planning.
 
 ## Stack
 
@@ -44,6 +44,12 @@ Saved filters are stored under the signed-in user's document:
 users/{uid}/filters/{filterId}
 ```
 
+Daily plans are stored under the signed-in user's document by date:
+
+```text
+users/{uid}/dailyPlans/{YYYY-MM-DD}
+```
+
 Each task stores:
 
 ```text
@@ -64,6 +70,13 @@ Each saved filter stores:
 id, userId, name, description, query, color, createdAt, updatedAt
 ```
 
+Each daily plan stores:
+
+```text
+id, userId, date, topTaskIds, deepWorkTaskId, timeBlocks,
+reflection, createdAt, updatedAt
+```
+
 Firestore rules in `firestore.rules` allow authenticated users to access only:
 
 ```text
@@ -71,6 +84,7 @@ users/{uid}
 users/{uid}/tasks/{taskId}
 users/{uid}/projects/{projectId}
 users/{uid}/filters/{filterId}
+users/{uid}/dailyPlans/{dateId}
 users/{uid}/settings/main
 ```
 
@@ -116,3 +130,13 @@ Due date groups are:
 ```text
 no-due-date, overdue, today, tomorrow, this-week, later
 ```
+
+## Today Planning
+
+The Today page stores one daily plan per user and date. It supports:
+
+- Top 3 priority task selection
+- One Deep Work task
+- Time blocks with optional task assignment
+- Daily reflection with energy and mood
+- Today summary metrics for task count, overdue count, estimates, and completion

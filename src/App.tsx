@@ -18,17 +18,33 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
 import { starterProjects } from "./constants";
-import { getProjectStats, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
+import { getProjectStats, useDailyPlan, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
 import { parseQuickCapture } from "./taskParser";
-import type { FilterCriteria, Project, ProjectFormValues, ProjectStats, SavedFilter, SavedFilterFormValues, Task, TaskFormValues, TaskStatus } from "./types";
+import type {
+  DailyPlan,
+  DailyReflection,
+  FilterCriteria,
+  Project,
+  ProjectFormValues,
+  ProjectStats,
+  SavedFilter,
+  SavedFilterFormValues,
+  Task,
+  TaskFormValues,
+  TaskStatus,
+  TimeBlock,
+  TimeBlockFormValues,
+} from "./types";
 import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCountsByTag, getDueDateGroup, normalizeTags } from "./filterUtils";
 import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
+import { calculateTodayStats, formatMinutes, getTodayDateId } from "./todayUtils";
 import { AuthScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
 import { SavedViewForm, SavedViewsPage } from "./components/SavedViewsComponents";
 import { QuickCapture, TaskEditor, TaskSection } from "./components/TaskComponents";
 import { TagList } from "./components/TaskBrowseComponents";
+import { TodayPage } from "./components/TodayComponents";
 
 type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "settings";
 
@@ -95,13 +111,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [todayDateId] = useState(() => getTodayDateId());
 
   const taskState = useUserTasks(user);
   const projectState = useUserProjects(user);
   const savedFilterState = useUserSavedFilters(user);
+  const dailyPlanState = useDailyPlan(user, todayDateId);
   const { tasks } = taskState;
   const { projects } = projectState;
   const { filters: savedFilters } = savedFilterState;
+  const dailyPlan = dailyPlanState.plan;
 
   useEffect(() => {
     const handleHashChange = () => setActivePage(getPageFromHash());
@@ -141,6 +160,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const highPriorityTasks = openTasks.filter((task) => task.priority === "high");
   const noProjectTasks = openTasks.filter((task) => !task.projectId);
   const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
+  const todayStats = useMemo(() => calculateTodayStats(tasks, dailyPlan, todayDateId), [dailyPlan, tasks, todayDateId]);
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
   const nextTask = openTasks.find((task) => task.priority === "urgent" || task.priority === "high") ?? todayTasks[0] ?? openTasks[0] ?? null;
   const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? "Dashboard";
@@ -236,6 +256,101 @@ function ProtectedLifeOS({ user }: { user: User }) {
     }
 
     await deleteDoc(doc(db, "users", user.uid, "tasks", task.id));
+  }
+
+  async function saveDailyPlanPatch(updates: Partial<Pick<DailyPlan, "topTaskIds" | "deepWorkTaskId" | "timeBlocks" | "reflection">>) {
+    await setDoc(
+      doc(db, "users", user.uid, "dailyPlans", todayDateId),
+      {
+        id: todayDateId,
+        userId: user.uid,
+        date: todayDateId,
+        ...updates,
+        createdAt: dailyPlanState.exists ? dailyPlan.createdAt ?? serverTimestamp() : serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  function addTopTask(taskId: string) {
+    if (dailyPlan.topTaskIds.includes(taskId)) {
+      setActionMessage("That task is already in your Top 3.");
+      return;
+    }
+
+    if (dailyPlan.topTaskIds.length >= 3) {
+      setActionError("You can only choose up to 3 priorities for the day.");
+      return;
+    }
+
+    void runAction(() => saveDailyPlanPatch({ topTaskIds: [...dailyPlan.topTaskIds, taskId].slice(0, 3) }), "Top 3 updated.");
+  }
+
+  function removeTopTask(taskId: string) {
+    void runAction(() => saveDailyPlanPatch({ topTaskIds: dailyPlan.topTaskIds.filter((id) => id !== taskId) }), "Top 3 updated.");
+  }
+
+  function setDeepWorkTask(taskId: string) {
+    void runAction(() => saveDailyPlanPatch({ deepWorkTaskId: taskId }), "Deep Work task saved.");
+  }
+
+  function clearDeepWorkTask() {
+    void runAction(() => saveDailyPlanPatch({ deepWorkTaskId: null }), "Deep Work task cleared.");
+  }
+
+  async function saveTimeBlock(blockId: string | null, values: TimeBlockFormValues) {
+    const assignedTask = values.taskId ? tasks.find((task) => task.id === values.taskId) ?? null : null;
+    const nextBlock: TimeBlock = {
+      id: blockId ?? createLocalId(),
+      taskId: values.taskId || null,
+      title: values.title.trim() || assignedTask?.title || "",
+      startTime: values.startTime,
+      endTime: values.endTime,
+      type: values.type,
+      notes: values.notes.trim(),
+      completed: values.completed,
+    };
+    const nextBlocks = blockId
+      ? dailyPlan.timeBlocks.map((block) => (block.id === blockId ? nextBlock : block))
+      : [...dailyPlan.timeBlocks, nextBlock];
+    await saveDailyPlanPatch({ timeBlocks: nextBlocks });
+  }
+
+  function deleteTimeBlock(block: TimeBlock) {
+    if (!window.confirm(`Delete time block "${block.title || block.startTime}"?`)) {
+      return;
+    }
+
+    void runAction(() => saveDailyPlanPatch({ timeBlocks: dailyPlan.timeBlocks.filter((item) => item.id !== block.id) }), "Time block deleted.");
+  }
+
+  function toggleTimeBlock(block: TimeBlock) {
+    void runAction(
+      () => saveDailyPlanPatch({ timeBlocks: dailyPlan.timeBlocks.map((item) => (item.id === block.id ? { ...item, completed: !item.completed } : item)) }),
+      block.completed ? "Time block reopened." : "Time block completed."
+    );
+  }
+
+  function saveReflection(reflection: DailyReflection) {
+    return saveDailyPlanPatch({ reflection });
+  }
+
+  function startFocusBlock(task: Task) {
+    const { startTime, endTime } = getFocusBlockTimes(Number(task.estimatedMinutes || 50));
+    void runAction(
+      () =>
+        saveTimeBlock(null, {
+          taskId: task.id,
+          title: `Focus: ${task.title}`,
+          startTime,
+          endTime,
+          type: "deep-work",
+          notes: "",
+          completed: false,
+        }),
+      "Focus block added to today."
+    );
   }
 
   async function saveProject(values: ProjectFormValues, project: Project | null) {
@@ -429,7 +544,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         <div className="brand-row">
           <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
           <div>
-            <p className="eyebrow">Phase 3 workspace</p>
+            <p className="eyebrow">Phase 4 workspace</p>
             <h1>LifeOS v2</h1>
           </div>
         </div>
@@ -490,6 +605,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {taskState.error ? <StatusBanner tone="error" message={taskState.error} /> : null}
         {projectState.error ? <StatusBanner tone="error" message={projectState.error} /> : null}
         {savedFilterState.error ? <StatusBanner tone="error" message={savedFilterState.error} /> : null}
+        {dailyPlanState.error ? <StatusBanner tone="error" message={dailyPlanState.error} /> : null}
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -506,6 +622,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
             highPriorityTasks={highPriorityTasks}
             noProjectTasks={noProjectTasks}
             overdueTasks={overdueTasks}
+            dailyPlan={dailyPlan}
+            todayStats={todayStats}
             onQuickCreate={(value) => createTaskFromQuick(value, "inbox")}
             onOpenSavedFilter={(filter) => {
               setSelectedSavedFilterId(filter.id);
@@ -513,6 +631,34 @@ function ProtectedLifeOS({ user }: { user: User }) {
             }}
             onSelectTag={applyTagFilter}
             onApplyTaskSignal={applyDashboardFilter}
+          />
+        ) : null}
+
+        {activePage === "today" ? (
+          <TodayPage
+            dateId={todayDateId}
+            plan={dailyPlan}
+            loading={dailyPlanState.loading}
+            tasks={tasks}
+            todayTasks={todayTasks}
+            overdueTasks={overdueTasks}
+            projects={projects}
+            stats={todayStats}
+            onQuickCreate={(value) => createTaskFromQuick(value, "today")}
+            onAddTopTask={addTopTask}
+            onRemoveTopTask={removeTopTask}
+            onSetDeepWork={setDeepWorkTask}
+            onClearDeepWork={clearDeepWorkTask}
+            onStartFocusBlock={startFocusBlock}
+            onSaveTimeBlock={(blockId, values) => runAction(() => saveTimeBlock(blockId, values), "Time block saved.")}
+            onDeleteTimeBlock={deleteTimeBlock}
+            onToggleTimeBlock={toggleTimeBlock}
+            onSaveReflection={(reflection) => runAction(() => saveReflection(reflection), "Reflection saved.")}
+            onEditTask={(task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId })}
+            onMarkDone={(task) => void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.")}
+            onMoveTask={(task, status) =>
+              void runAction(() => updateTask(task, { status, completedAt: null }), status === "inbox" ? "Task moved to Inbox." : "Task moved to Upcoming.")
+            }
           />
         ) : null}
 
@@ -590,7 +736,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} savedFilters={savedFilters} tagCount={tagCounts.length} /> : null}
 
-        {activePage !== "projects" && activePage !== "saved-views" ? (
+        {activePage !== "projects" && activePage !== "saved-views" && activePage !== "today" ? (
           <TaskSection
             loading={taskState.loading}
             page={activePage}
@@ -664,6 +810,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
     highPriorityTasks,
     noProjectTasks,
     overdueTasks,
+    dailyPlan,
+    todayStats,
     onQuickCreate,
     onOpenSavedFilter,
     onSelectTag,
@@ -682,6 +830,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
     highPriorityTasks: Task[];
     noProjectTasks: Task[];
     overdueTasks: Task[];
+    dailyPlan: DailyPlan;
+    todayStats: ReturnType<typeof calculateTodayStats>;
     onQuickCreate: (value: string) => Promise<void>;
     onOpenSavedFilter: (filter: SavedFilter) => void;
     onSelectTag: (tag: string) => void;
@@ -694,6 +844,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
     const recentProjects = [...projects].slice(0, 3);
     const topTags = tagCounts.slice(0, 6);
     const savedViewShortcuts = savedFilters.slice(0, 3);
+    const taskById = new Map(tasks.map((task) => [task.id, task]));
+    const topPreviewTasks = dailyPlan.topTaskIds.map((taskId) => taskById.get(taskId)).filter((task): task is Task => Boolean(task));
+    const deepWorkTask = dailyPlan.deepWorkTaskId ? taskById.get(dailyPlan.deepWorkTaskId) ?? null : null;
 
     return (
       <>
@@ -722,6 +875,36 @@ function ProtectedLifeOS({ user }: { user: User }) {
         </section>
 
         <section className="content-grid dashboard-project-grid">
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Today plan</p>
+                <h3>Top 3 and Deep Work</h3>
+              </div>
+              <a className="secondary-button" href="#today">
+                <CheckCircle2 size={17} />
+                Today
+              </a>
+            </div>
+            <div className="dashboard-today-plan">
+              <div>
+                <strong>{formatMinutes(todayStats.totalEstimatedMinutes)}</strong>
+                <span>estimated today</span>
+              </div>
+              <div>
+                <strong>{todayStats.completedToday}</strong>
+                <span>completed</span>
+              </div>
+            </div>
+            <div className="dashboard-mini-list">
+              {topPreviewTasks.length === 0 ? <span className="muted-line">No Top 3 selected yet.</span> : null}
+              {topPreviewTasks.map((task) => (
+                <span key={task.id}>{task.title}</span>
+              ))}
+              {deepWorkTask ? <em>Deep Work: {deepWorkTask.title}</em> : <em>No Deep Work task selected.</em>}
+            </div>
+          </article>
+
           <article className="panel">
             <div className="panel-heading">
               <div>
@@ -986,10 +1169,31 @@ function getPageHeadline(page: PageId) {
     case "inbox":
       return "Capture raw tasks quickly and clarify them later.";
     case "today":
-      return "Work from a short list of tasks committed for today.";
+      return "Plan your Top 3, Deep Work, time blocks, and daily reflection.";
     case "upcoming":
       return "Keep future commitments visible without crowding today.";
     case "settings":
       return "Confirm account, Firebase, and archived task state.";
   }
+}
+
+function createLocalId() {
+  return globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function getFocusBlockTimes(minutes: number) {
+  const start = new Date();
+  const roundedMinutes = Math.ceil(start.getMinutes() / 5) * 5;
+  start.setMinutes(roundedMinutes, 0, 0);
+  const end = new Date(start);
+  end.setMinutes(end.getMinutes() + Math.max(25, minutes || 50));
+
+  return {
+    startTime: formatTimeInput(start),
+    endTime: formatTimeInput(end),
+  };
+}
+
+function formatTimeInput(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }

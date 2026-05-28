@@ -86,6 +86,7 @@ export function TaskSection({
 }) {
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const title = page === "settings" ? "Archived tasks" : page === "dashboard" ? "Recent tasks" : `${titleCase(page)} tasks`;
+  const emptyState = getTaskEmptyState(page, filterCriteria);
 
   return (
     <article className="panel task-panel">
@@ -99,7 +100,7 @@ export function TaskSection({
       <TaskFilters criteria={filterCriteria} projects={projects} tags={tags} onChange={onFilterChange} onClear={onClearFilters} />
 
       {loading ? <EmptyState title="Loading tasks" message="Reading your user-specific Firestore task collection." /> : null}
-      {!loading && tasks.length === 0 ? <EmptyState title="No matching tasks" message={getEmptyMessage(page)} /> : null}
+      {!loading && tasks.length === 0 ? <EmptyState title={emptyState.title} message={emptyState.message} /> : null}
 
       <div className="task-list">
         {tasks.map((task) => (
@@ -419,19 +420,48 @@ function taskToFormValues(task: Task | null, defaultStatus: TaskStatus, defaultP
   };
 }
 
-function getEmptyMessage(page: string) {
+function getTaskEmptyState(page: string, criteria: FilterCriteria) {
+  if (hasActiveFilterCriteria(criteria)) {
+    return {
+      title: "No matching tasks",
+      message: "Clear filters or adjust the search to see more tasks.",
+    };
+  }
+
   switch (page) {
     case "dashboard":
-      return "Create a task from quick capture or attach a task to a project.";
+      return {
+        title: "No matching tasks",
+        message: "Create a task from quick capture or attach a task to a project.",
+      };
     case "inbox":
-      return "Quick capture tasks here before moving them to Today, Upcoming, or a project.";
+      return {
+        title: "No inbox tasks yet",
+        message: "Capture a task to get started.",
+      };
     case "today":
-      return "Move a task to Today when it is ready for action.";
+      return {
+        title: "No matching tasks",
+        message: "Move a task to Today when it is ready for action.",
+      };
     case "upcoming":
-      return "Move a task to Upcoming when it needs future attention.";
+      return {
+        title: "No matching tasks",
+        message: "Move a task to Upcoming when it needs future attention.",
+      };
     case "settings":
-      return "Archived tasks will appear here.";
+      return {
+        title: "No matching tasks",
+        message: "Archived tasks will appear here.",
+      };
     default:
-      return "No tasks match the current view.";
+      return {
+        title: "No matching tasks",
+        message: "No tasks match the current view.",
+      };
   }
+}
+
+function hasActiveFilterCriteria(criteria: FilterCriteria) {
+  return Object.values(criteria).some((value) => Boolean(value));
 }

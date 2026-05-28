@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import {
   collection,
+  doc,
   onSnapshot,
   orderBy,
   query,
@@ -9,9 +10,10 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Project, ProjectStats, SavedFilter, Task } from "./types";
+import type { DailyPlan, Project, ProjectStats, SavedFilter, Task } from "./types";
 import { isFilterCriteria, normalizeTags } from "./filterUtils";
 import { getFriendlyError, isEnergyLevel, isProjectArea, isProjectStatus, isTaskPriority, isTaskStatus } from "./utils";
+import { createEmptyDailyPlan, normalizeReflection, normalizeTimeBlock } from "./todayUtils";
 
 export function useUserTasks(user: User) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -91,6 +93,34 @@ export function useUserSavedFilters(user: User) {
   return { filters, loading, error };
 }
 
+export function useDailyPlan(user: User, dateId: string) {
+  const [plan, setPlan] = useState<DailyPlan>(() => createEmptyDailyPlan(user.uid, dateId));
+  const [exists, setExists] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    setPlan(createEmptyDailyPlan(user.uid, dateId));
+
+    return onSnapshot(
+      doc(db, "users", user.uid, "dailyPlans", dateId),
+      (snapshot) => {
+        setExists(snapshot.exists());
+        setPlan(snapshot.exists() ? mapDailyPlanDocument(snapshot.id, snapshot.data(), user.uid, dateId) : createEmptyDailyPlan(user.uid, dateId));
+        setLoading(false);
+      },
+      (snapshotError) => {
+        setError(getFriendlyError(snapshotError));
+        setLoading(false);
+      }
+    );
+  }, [dateId, user.uid]);
+
+  return { plan, exists, loading, error };
+}
+
 export function getProjectStats(projectId: string, tasks: Task[]): ProjectStats {
   const projectTasks = tasks.filter((task) => task.projectId === projectId && task.status !== "archived");
   const completedTasks = projectTasks.filter((task) => task.status === "done").length;
@@ -137,6 +167,25 @@ function mapSavedFilterDocument(snapshot: QueryDocumentSnapshot<DocumentData>): 
     color: String(data.color ?? "#2a5f48"),
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
+  };
+}
+
+function mapDailyPlanDocument(id: string, data: DocumentData | undefined, userId: string, dateId: string): DailyPlan {
+  const planData = data ?? {};
+  const timeBlocks = Array.isArray(planData.timeBlocks)
+    ? planData.timeBlocks.map(normalizeTimeBlock).filter((block): block is NonNullable<typeof block> => Boolean(block))
+    : [];
+
+  return {
+    id,
+    userId: String(planData.userId ?? userId),
+    date: String(planData.date ?? dateId),
+    topTaskIds: Array.isArray(planData.topTaskIds) ? planData.topTaskIds.map(String).slice(0, 3) : [],
+    deepWorkTaskId: typeof planData.deepWorkTaskId === "string" ? planData.deepWorkTaskId : null,
+    timeBlocks,
+    reflection: normalizeReflection(planData.reflection),
+    createdAt: planData.createdAt ?? null,
+    updatedAt: planData.updatedAt ?? null,
   };
 }
 

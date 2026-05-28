@@ -6,6 +6,8 @@ export type EnergyLevel = "low" | "medium" | "high";
 export type ProjectStatus = "active" | "paused" | "completed" | "archived";
 export type ProjectArea = "Study" | "Business" | "Health" | "Client Work" | "Personal" | "Other";
 export type DueDateGroup = "no-due-date" | "overdue" | "today" | "tomorrow" | "this-week" | "later";
+export type TimeBlockType = "deep-work" | "study" | "admin" | "health" | "break" | "personal" | "other";
+export type MoodLevel = "low" | "okay" | "good" | "great";
 
 export type Task = {
   id: string;
@@ -100,4 +102,53 @@ export type TagCount = {
   openTasks: number;
   completedTasks: number;
   totalTasks: number;
+};
+
+export type TimeBlock = {
+  id: string;
+  taskId: string | null;
+  title: string;
+  startTime: string;
+  endTime: string;
+  type: TimeBlockType;
+  notes: string;
+  completed: boolean;
+};
+
+export type DailyReflection = {
+  wentWell: string;
+  distractions: string;
+  improveTomorrow: string;
+  energyLevel: EnergyLevel | null;
+  mood: MoodLevel | null;
+};
+
+export type DailyPlan = {
+  id: string;
+  userId: string;
+  date: string;
+  topTaskIds: string[];
+  deepWorkTaskId: string | null;
+  timeBlocks: TimeBlock[];
+  reflection: DailyReflection;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+};
+
+export type TimeBlockFormValues = {
+  taskId: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  type: TimeBlockType;
+  notes: string;
+  completed: boolean;
+};
+
+export type TodayStats = {
+  todayTasks: number;
+  overdueTasks: number;
+  totalEstimatedMinutes: number;
+  completedToday: number;
+  topCompleted: number;
 };
