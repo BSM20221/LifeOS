@@ -147,15 +147,7 @@ export function TodayPage({
         onToggleTimeBlock={onToggleTimeBlock}
       />
 
-      <article className="panel today-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Today insights</p>
-            <h3>Practical signals</h3>
-          </div>
-        </div>
-        <InsightMessageList messages={insightMessages.slice(0, 3)} />
-      </article>
+      <TodayAnalyticsPanel stats={stats} focusStats={focusStats} plan={plan} recommendation={insightMessages[0] ?? null} />
 
       <DailyReflectionForm reflection={plan.reflection} onSave={onSaveReflection} />
     </section>
@@ -173,6 +165,63 @@ export function TodaySummary({ stats, focusStats }: { stats: TodayStats; focusSt
       <SummaryTile label="Focus" value={formatMinutes(focusStats.totalFocusedMinutes)} />
       <SummaryTile label="Focus sessions" value={String(focusStats.completedSessions)} />
     </section>
+  );
+}
+
+export function TodayAnalyticsPanel({
+  stats,
+  focusStats,
+  plan,
+  recommendation,
+}: {
+  stats: TodayStats;
+  focusStats: FocusStats;
+  plan: DailyPlan;
+  recommendation: InsightMessage | null;
+}) {
+  const plannedCount = Math.max(stats.todayTasks, plan.topTaskIds.length);
+  const plannedCompletion = plannedCount > 0 ? Math.round((stats.completedToday / plannedCount) * 100) : 0;
+  const topThreeText = `${stats.topCompleted}/${Math.max(3, plan.topTaskIds.length || 3)}`;
+
+  return (
+    <article className="panel today-panel today-analytics-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Today analytics</p>
+          <h3>Planning signal</h3>
+        </div>
+        <Target size={20} />
+      </div>
+      <div className="today-analytics-grid">
+        <span>
+          <strong>{topThreeText}</strong>
+          Top 3 complete
+        </span>
+        <span>
+          <strong>{formatMinutes(focusStats.totalFocusedMinutes)}</strong>
+          focus today
+        </span>
+        <span>
+          <strong>{stats.completedToday}/{plannedCount}</strong>
+          planned vs done
+        </span>
+        <span>
+          <strong>{plannedCompletion}%</strong>
+          completion signal
+        </span>
+      </div>
+      <div className="performance-score" aria-label={`Today planned completion ${plannedCompletion}%`}>
+        <span style={{ width: `${Math.min(100, plannedCompletion)}%` }} />
+      </div>
+      {recommendation ? (
+        <section className={`insight-card ${recommendation.severity}`}>
+          <strong>Today's suggestion: {recommendation.title}</strong>
+          <p>{recommendation.message}</p>
+        </section>
+      ) : (
+        <InsightMessageList messages={[]} />
+      )}
+    </article>
   );
 }
 

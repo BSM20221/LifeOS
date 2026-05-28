@@ -122,6 +122,32 @@ export function useDailyPlan(user: User, dateId: string) {
   return { plan, exists, loading, error };
 }
 
+export function useUserDailyPlans(user: User) {
+  const [plans, setPlans] = useState<DailyPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+
+    const planQuery = query(collection(db, "users", user.uid, "dailyPlans"), orderBy("date", "desc"));
+    return onSnapshot(
+      planQuery,
+      (snapshot) => {
+        setPlans(snapshot.docs.map((snapshot) => mapDailyPlanDocument(snapshot.id, snapshot.data(), user.uid, snapshot.id)));
+        setLoading(false);
+      },
+      (snapshotError) => {
+        setError(getFriendlyError(snapshotError));
+        setLoading(false);
+      }
+    );
+  }, [user.uid]);
+
+  return { plans, loading, error };
+}
+
 export function useUserFocusSessions(user: User) {
   const [sessions, setSessions] = useState<FocusSession[]>([]);
   const [loading, setLoading] = useState(true);

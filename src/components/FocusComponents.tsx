@@ -5,6 +5,7 @@ import {
   calculateRemainingSeconds,
   focusModeDurations,
   formatTimerSeconds,
+  getCompletedFocusMinutes,
   getFocusModeLabel,
 } from "../focusUtils";
 import { displayWithEmoji } from "../emojiPresets";
@@ -461,7 +462,7 @@ export function FocusSessionCard({
           ) : null}
           <span>{getFocusModeLabel(session.mode)}</span>
           <span>{session.plannedMinutes} planned</span>
-          <span>{Math.round(session.actualMinutes)} actual</span>
+          <span>{getCompletedFocusMinutes(session)} actual</span>
           <em className={`status-pill ${session.status}`}>{session.status}</em>
           {session.completedAt ? <span>Completed {formatSessionTime(session.completedAt)}</span> : null}
         </div>

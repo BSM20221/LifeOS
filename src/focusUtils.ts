@@ -56,17 +56,57 @@ export function secondsToStoredMinutes(seconds: number) {
   return Math.round(Math.max(0, seconds) / 60 * 100) / 100;
 }
 
-export function getTodayFocusStats(sessions: FocusSession[], dateId: string): FocusStats {
+export function getCompletedFocusMinutes(session: FocusSession) {
+  if (session.status !== "completed") {
+    return 0;
+  }
+
+  const actualMinutes = Number(session.actualMinutes || 0);
+  if (actualMinutes > 0) {
+    return Math.max(0, Math.round(actualMinutes));
+  }
+
+  return Math.max(0, Math.round(Number(session.plannedMinutes || 0)));
+}
+
+export function getStoredCompletedMinutes(session: FocusSession, elapsedSeconds: number) {
+  const elapsedMinutes = secondsToStoredMinutes(elapsedSeconds);
+  if (elapsedMinutes > 0) {
+    return elapsedMinutes;
+  }
+
+  const existingActualMinutes = Number(session.actualMinutes || 0);
+  if (existingActualMinutes > 0) {
+    return existingActualMinutes;
+  }
+
+  return Math.max(0, Number(session.plannedMinutes || 0));
+}
+
+export function resolveFocusSessionProjectId(session: FocusSession, tasks: Task[] = []) {
+  if (session.projectId) {
+    return session.projectId;
+  }
+
+  if (!session.taskId) {
+    return null;
+  }
+
+  return tasks.find((task) => task.id === session.taskId)?.projectId ?? null;
+}
+
+export function getTodayFocusStats(sessions: FocusSession[], dateId: string, tasks: Task[] = []): FocusStats {
   const completedSessions = sessions.filter((session) => session.dailyPlanDate === dateId && session.status === "completed");
 
   return completedSessions.reduce<FocusStats>(
     (stats, session) => {
-      const roundedMinutes = Math.max(0, Math.round(Number(session.actualMinutes || 0)));
+      const roundedMinutes = getCompletedFocusMinutes(session);
+      const projectId = resolveFocusSessionProjectId(session, tasks);
       stats.completedSessions += 1;
       stats.totalFocusedMinutes += roundedMinutes;
 
-      if (session.projectId) {
-        stats.minutesByProject[session.projectId] = (stats.minutesByProject[session.projectId] ?? 0) + roundedMinutes;
+      if (projectId) {
+        stats.minutesByProject[projectId] = (stats.minutesByProject[projectId] ?? 0) + roundedMinutes;
       }
 
       if (session.taskId) {

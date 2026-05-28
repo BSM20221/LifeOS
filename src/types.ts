@@ -11,6 +11,8 @@ export type MoodLevel = "low" | "okay" | "good" | "great";
 export type FocusMode = "pomodoro" | "short-break" | "long-break" | "custom";
 export type FocusStatus = "running" | "paused" | "completed" | "cancelled";
 export type InsightSeverity = "info" | "success" | "warning" | "danger";
+export type AnalyticsRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
+export type PerformanceStatus = "Strong" | "Healthy" | "Needs attention" | "Neglected" | "Stuck";
 export type QuoteCategory =
   | "discipline"
   | "focus"
@@ -219,6 +221,88 @@ export type ChartDatum = {
   label: string;
   value: number;
   color?: string;
+  detail?: string;
+};
+
+export type ChartSeries = {
+  label: string;
+  data: ChartDatum[];
+  color?: string;
+};
+
+export type DateBucket = {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+};
+
+export type PriorityCompletionStats = {
+  priority: TaskPriority;
+  completed: number;
+  open: number;
+  overdue: number;
+};
+
+export type PlannedVsCompletedStats = {
+  planned: number;
+  completed: number;
+  topThreePlanned: number;
+  topThreeCompleted: number;
+  timeBlocksPlanned: number;
+  timeBlocksCompleted: number;
+};
+
+export type TagPerformanceStats = {
+  tag: string;
+  openTasks: number;
+  completedTasks: number;
+  totalTasks: number;
+};
+
+export type ProjectPerformance = {
+  projectId: string;
+  name: string;
+  emoji: string | null;
+  area: ProjectArea;
+  color: string;
+  completedTasks: number;
+  focusMinutes: number;
+  openTasks: number;
+  overdueTasks: number;
+  urgentHighOpen: number;
+  priorityCompleted: number;
+  lastActivityDate: string;
+  daysSinceActivity: number | null;
+  score: number;
+  status: PerformanceStatus;
+  message: string;
+};
+
+export type AreaPerformance = {
+  area: ProjectArea | "Uncategorized";
+  emoji: string | null;
+  completedTasks: number;
+  focusMinutes: number;
+  openTasks: number;
+  overdueTasks: number;
+  urgentHighOpen: number;
+  priorityCompleted: number;
+  lastActivityDate: string;
+  daysSinceActivity: number | null;
+  score: number;
+  status: PerformanceStatus;
+  message: string;
+};
+
+export type PerformanceRecommendation = {
+  id: string;
+  title: string;
+  message: string;
+  severity: InsightSeverity;
+  action: string;
+  projectId?: string;
+  area?: ProjectArea | "Uncategorized";
 };
 
 export type ConfirmDialogState = {

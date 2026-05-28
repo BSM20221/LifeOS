@@ -1,8 +1,10 @@
 import {
   BarChart3,
   CalendarClock,
+  AlertTriangle,
   Check,
   CheckCircle2,
+  Clock3,
   FolderKanban,
   Inbox,
   LayoutDashboard,
@@ -20,7 +22,7 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
 import { starterProjects } from "./constants";
-import { getProjectStats, useDailyPlan, useUserFavoriteQuotes, useUserFocusSessions, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
+import { getProjectStats, useDailyPlan, useUserDailyPlans, useUserFavoriteQuotes, useUserFocusSessions, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
 import { parseQuickCapture } from "./taskParser";
 import type {
   DailyPlan,
@@ -29,8 +31,10 @@ import type {
   FilterCriteria,
   FocusMode,
   FocusSession,
+  AreaPerformance,
   Project,
   ProjectFormValues,
+  ProjectPerformance,
   ProjectStats,
   SavedFilter,
   SavedFilterFormValues,
@@ -43,14 +47,22 @@ import type {
 import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCountsByTag, getDueDateGroup, normalizeTags } from "./filterUtils";
 import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
 import { calculateTodayStats, formatMinutes, getTodayDateId } from "./todayUtils";
-import { calculateElapsedSeconds, createFocusSessionPayload, getTodayFocusStats, secondsToStoredMinutes } from "./focusUtils";
-import { generateInsightMessages } from "./insightsUtils";
+import { calculateElapsedSeconds, createFocusSessionPayload, getStoredCompletedMinutes, getTodayFocusStats, secondsToStoredMinutes } from "./focusUtils";
+import {
+  generateInsightMessages,
+  generatePerformanceRecommendations,
+  getAreaPerformance,
+  getCompletedTasksInRange,
+  getDateRange,
+  getFocusMinutesInRange,
+  getProjectPerformance,
+} from "./insightsUtils";
 import { displayWithEmoji } from "./emojiPresets";
 import { getDailyQuote, getRandomQuote } from "./quotes";
 import { AuthScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { FocusPage } from "./components/FocusComponents";
-import { InsightsPage, InsightMessageList } from "./components/InsightsComponents";
+import { InsightsPage, InsightMessageList, RecommendationList } from "./components/InsightsComponents";
 import { ConfirmDialog } from "./components/ModalComponents";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
 import { DailyQuoteCard } from "./components/QuoteComponents";
@@ -136,6 +148,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const projectState = useUserProjects(user);
   const savedFilterState = useUserSavedFilters(user);
   const dailyPlanState = useDailyPlan(user, todayDateId);
+  const dailyPlansState = useUserDailyPlans(user);
   const focusSessionState = useUserFocusSessions(user);
   const favoriteQuoteState = useUserFavoriteQuotes(user);
   const { tasks } = taskState;
@@ -143,6 +156,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const { filters: savedFilters } = savedFilterState;
   const { sessions: focusSessions } = focusSessionState;
   const { favorites: favoriteQuotes } = favoriteQuoteState;
+  const { plans: dailyPlans } = dailyPlansState;
   const dailyPlan = dailyPlanState.plan;
   const dailyQuote = useMemo(() => getDailyQuote(todayDateId, quoteOffset), [quoteOffset, todayDateId]);
 
@@ -185,7 +199,43 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const noProjectTasks = openTasks.filter((task) => !task.projectId);
   const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
   const todayStats = useMemo(() => calculateTodayStats(tasks, dailyPlan, todayDateId), [dailyPlan, tasks, todayDateId]);
-  const todayFocusStats = useMemo(() => getTodayFocusStats(focusSessions, todayDateId), [focusSessions, todayDateId]);
+  const todayFocusStats = useMemo(() => getTodayFocusStats(focusSessions, todayDateId, tasks), [focusSessions, tasks, todayDateId]);
+  const dashboardRange = useMemo(
+    () => getDateRange({ range: "7-days", todayDateId, tasks, sessions: focusSessions, dailyPlans }),
+    [dailyPlans, focusSessions, tasks, todayDateId]
+  );
+  const dashboardRecommendations = useMemo(
+    () =>
+      generatePerformanceRecommendations({
+        tasks,
+        projects,
+        sessions: focusSessions,
+        dailyPlans: dailyPlans.length > 0 ? dailyPlans : [dailyPlan],
+        dailyPlan,
+        tagCounts,
+        todayDateId,
+        range: dashboardRange,
+      }),
+    [dailyPlan, dailyPlans, dashboardRange, focusSessions, projects, tagCounts, tasks, todayDateId]
+  );
+  const dashboardProjectPerformance = useMemo(
+    () => getProjectPerformance(projects, tasks, focusSessions, dashboardRange, todayDateId),
+    [dashboardRange, focusSessions, projects, tasks, todayDateId]
+  );
+  const dashboardAreaPerformance = useMemo(
+    () => getAreaPerformance(tasks, projects, focusSessions, dashboardRange, todayDateId),
+    [dashboardRange, focusSessions, projects, tasks, todayDateId]
+  );
+  const bestDashboardPerformance =
+    [...dashboardProjectPerformance, ...dashboardAreaPerformance]
+      .filter((item) => item.status === "Strong" || item.status === "Healthy")
+      .sort((left, right) => right.score - left.score)[0] ?? null;
+  const attentionDashboardPerformance =
+    [...dashboardProjectPerformance, ...dashboardAreaPerformance].find(
+      (item) => item.status === "Stuck" || item.status === "Neglected" || item.status === "Needs attention"
+    ) ?? null;
+  const weekFocusMinutes = useMemo(() => getFocusMinutesInRange(focusSessions, dashboardRange), [dashboardRange, focusSessions]);
+  const weekCompletedTasks = useMemo(() => getCompletedTasksInRange(tasks, dashboardRange).length, [dashboardRange, tasks]);
   const insightMessages = useMemo(
     () =>
       generateInsightMessages({
@@ -193,10 +243,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
         projects,
         sessions: focusSessions,
         dailyPlan,
+        dailyPlans,
         tagCounts,
         todayDateId,
       }),
-    [dailyPlan, focusSessions, projects, tagCounts, tasks, todayDateId]
+    [dailyPlan, dailyPlans, focusSessions, projects, tagCounts, tasks, todayDateId]
   );
   const isDailyQuoteFavorite = favoriteQuotes.some((favorite) => favorite.quoteId === dailyQuote.id);
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
@@ -500,11 +551,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
   function completeFocusSession(session: FocusSession) {
     const elapsedSeconds = calculateElapsedSeconds(session);
+    const task = session.taskId ? tasks.find((candidateTask) => candidateTask.id === session.taskId) ?? null : null;
     void runAction(
       () =>
         updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
           status: "completed",
-          actualMinutes: secondsToStoredMinutes(elapsedSeconds),
+          plannedMinutes: Math.max(1, Number(session.plannedMinutes || 25)),
+          actualMinutes: getStoredCompletedMinutes(session, elapsedSeconds),
+          taskId: session.taskId ?? null,
+          projectId: session.projectId ?? task?.projectId ?? null,
+          dailyPlanDate: /^\d{4}-\d{2}-\d{2}$/.test(session.dailyPlanDate) ? session.dailyPlanDate : todayDateId,
           completedAt: getNowISOString(),
           updatedAt: serverTimestamp(),
           userId: user.uid,
@@ -766,7 +822,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         <div className="brand-row">
           <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
           <div>
-            <p className="eyebrow">Phase 5 workspace</p>
+            <p className="eyebrow">Personal workspace</p>
             <h1>LifeOS v2</h1>
           </div>
         </div>
@@ -828,6 +884,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {projectState.error ? <StatusBanner tone="error" message={projectState.error} /> : null}
         {savedFilterState.error ? <StatusBanner tone="error" message={savedFilterState.error} /> : null}
         {dailyPlanState.error ? <StatusBanner tone="error" message={dailyPlanState.error} /> : null}
+        {dailyPlansState.error ? <StatusBanner tone="error" message={dailyPlansState.error} /> : null}
         {focusSessionState.error ? <StatusBanner tone="error" message={focusSessionState.error} /> : null}
         {favoriteQuoteState.error ? <StatusBanner tone="error" message={favoriteQuoteState.error} /> : null}
 
@@ -849,6 +906,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
             dailyPlan={dailyPlan}
             todayStats={todayStats}
             focusStats={todayFocusStats}
+            weekFocusMinutes={weekFocusMinutes}
+            weekCompletedTasks={weekCompletedTasks}
+            bestPerformance={bestDashboardPerformance}
+            attentionPerformance={attentionDashboardPerformance}
+            performanceRecommendations={dashboardRecommendations}
             insightMessages={insightMessages}
             quote={dailyQuote}
             quoteFavorite={isDailyQuoteFavorite}
@@ -926,6 +988,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             projects={projects}
             focusSessions={focusSessions}
             dailyPlan={dailyPlan}
+            dailyPlans={dailyPlans}
             tagCounts={tagCounts}
             todayDateId={todayDateId}
             messages={insightMessages}
@@ -1093,6 +1156,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
     dailyPlan,
     todayStats,
     focusStats,
+    weekFocusMinutes,
+    weekCompletedTasks,
+    bestPerformance,
+    attentionPerformance,
+    performanceRecommendations,
     insightMessages,
     quote,
     quoteFavorite,
@@ -1121,6 +1189,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
     dailyPlan: DailyPlan;
     todayStats: ReturnType<typeof calculateTodayStats>;
     focusStats: ReturnType<typeof getTodayFocusStats>;
+    weekFocusMinutes: number;
+    weekCompletedTasks: number;
+    bestPerformance: ProjectPerformance | AreaPerformance | null;
+    attentionPerformance: ProjectPerformance | AreaPerformance | null;
+    performanceRecommendations: ReturnType<typeof generatePerformanceRecommendations>;
     insightMessages: ReturnType<typeof generateInsightMessages>;
     quote: typeof dailyQuote;
     quoteFavorite: boolean;
@@ -1167,9 +1240,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
           <MetricCard icon={Inbox} label="Open tasks" value={String(openTasks.length)} detail="Inbox, Today, Upcoming" />
           <MetricCard icon={CheckCircle2} label="Today" value={String(todayTasks.length)} detail="Scheduled for now" />
           <MetricCard icon={FolderKanban} label="Active projects" value={String(activeProjects.length)} detail="Active or paused" />
-          <MetricCard icon={ListFilter} label="Saved views" value={String(savedFilters.length)} detail="Custom task filters" />
           <MetricCard icon={Timer} label="Focus today" value={formatMinutes(focusStats.totalFocusedMinutes)} detail="Completed focus time" />
-          <MetricCard icon={Check} label="Focus sessions" value={String(focusStats.completedSessions)} detail="Completed today" />
+          <MetricCard icon={Clock3} label="Focus this week" value={formatMinutes(weekFocusMinutes)} detail="Last 7 days" />
+          <MetricCard icon={Check} label="Done this week" value={String(weekCompletedTasks)} detail="Completed tasks" />
+          <MetricCard icon={BarChart3} label="Best signal" value={getPerformanceTitle(bestPerformance)} detail={getPerformanceDetail(bestPerformance)} />
+          <MetricCard icon={AlertTriangle} label="Needs attention" value={getPerformanceTitle(attentionPerformance)} detail={getPerformanceDetail(attentionPerformance)} />
         </section>
 
         <section className="content-grid dashboard-project-grid">
@@ -1215,14 +1290,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Insights</p>
-                <h3>Pattern notes</h3>
+                <h3>Recommendations</h3>
               </div>
               <button className="secondary-button" type="button" onClick={onOpenInsights}>
                 <BarChart3 size={17} />
                 Insights
               </button>
             </div>
-            <InsightMessageList messages={insightMessages.slice(0, 3)} />
+            {performanceRecommendations.length > 0 ? <RecommendationList recommendations={performanceRecommendations.slice(0, 3)} /> : <InsightMessageList messages={insightMessages.slice(0, 3)} />}
           </article>
 
           <article className="panel">
@@ -1341,6 +1416,22 @@ function ProtectedLifeOS({ user }: { user: User }) {
         </section>
       </>
     );
+  }
+
+  function getPerformanceTitle(item: ProjectPerformance | AreaPerformance | null) {
+    if (!item) {
+      return "None yet";
+    }
+
+    return "projectId" in item ? displayWithEmoji(item.name, item.emoji) : displayWithEmoji(item.area, item.emoji);
+  }
+
+  function getPerformanceDetail(item: ProjectPerformance | AreaPerformance | null) {
+    if (!item) {
+      return "Create activity to compare";
+    }
+
+    return `${item.status} · ${formatMinutes(item.focusMinutes)} focus`;
   }
 
   function ProjectSummaryRow({ project, stats, showDate = false }: { project: Project; stats?: ProjectStats; showDate?: boolean }) {

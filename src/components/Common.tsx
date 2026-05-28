@@ -1,5 +1,5 @@
 import { Sparkles, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export function StatusBanner({ tone, message }: { tone: "error" | "success" | "info"; message: string }) {
   return (
@@ -50,6 +50,35 @@ export function MetricCard({ icon: Icon, label, value, detail }: { icon: LucideI
       <small>{detail}</small>
     </article>
   );
+}
+
+export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <article className={`panel design-card ${className}`.trim()}>{children}</article>;
+}
+
+export function SectionHeader({ eyebrow, title, action }: { eyebrow: string; title: string; action?: ReactNode }) {
+  return (
+    <div className="panel-heading section-header">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h3>{title}</h3>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export function Button({
+  variant = "secondary",
+  className = "",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
+  const variantClass = variant === "primary" ? "primary-button" : variant === "danger" ? "secondary-button danger-button" : variant === "ghost" ? "ghost-button" : "secondary-button";
+  return <button className={`${variantClass} ${className}`.trim()} {...props} />;
+}
+
+export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "success" | "warning" | "danger" | "info" }) {
+  return <span className={`ui-badge ${tone}`}>{children}</span>;
 }
 
 export function ProgressBar({ value, label }: { value: number; label?: string }) {
