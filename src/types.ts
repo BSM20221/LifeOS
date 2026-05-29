@@ -10,9 +10,14 @@ export type TimeBlockType = "deep-work" | "study" | "admin" | "health" | "break"
 export type MoodLevel = "low" | "okay" | "good" | "great";
 export type FocusMode = "pomodoro" | "short-break" | "long-break" | "custom";
 export type FocusStatus = "running" | "paused" | "completed" | "cancelled";
+export type HabitFrequency = "daily" | "weekly" | "custom";
 export type InsightSeverity = "info" | "success" | "warning" | "danger";
 export type AnalyticsRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
 export type PerformanceStatus = "Strong" | "Healthy" | "Needs attention" | "Neglected" | "Stuck";
+export type WeekId = string;
+export type ProjectHealthStatus = "healthy" | "at-risk" | "stuck" | "paused";
+export type WeeklyProjectAction = "continue" | "pause" | "cleanup";
+export type WeeklyProjectReviewState = WeeklyProjectAction | null;
 export type ReportingRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
 export type ReportingViewMode = "daily" | "weekly" | "monthly" | "yearly";
 export type ReportingType =
@@ -215,6 +220,114 @@ export type FocusStats = {
   totalFocusedMinutes: number;
   minutesByProject: Record<string, number>;
   minutesByTask: Record<string, number>;
+};
+
+export type Habit = {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  emoji: string | null;
+  color: string;
+  frequency: HabitFrequency;
+  targetPerWeek: number;
+  active: boolean;
+  archived: boolean;
+  archivedAt: string | null;
+  completionDates: string[];
+  completions: HabitCompletion[];
+  streak: number;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+};
+
+export type HabitCompletion = {
+  id: string;
+  habitId: string;
+  userId: string;
+  date: string;
+  completedAt: Timestamp | string | null;
+  note: string;
+};
+
+export type HabitFormValues = {
+  name: string;
+  description: string;
+  emoji: string;
+  color: string;
+  frequency: HabitFrequency;
+  targetPerWeek: string;
+  active: boolean;
+};
+
+export type WeeklyReview = {
+  id: string;
+  userId: string;
+  weekId: WeekId;
+  weekStartDate: string;
+  weekEndDate: string;
+  completedTaskIds: string[];
+  reviewedProjectIds: string[];
+  topWins: string;
+  biggestStruggles: string;
+  lessonsLearned: string;
+  whatToStopDoing: string;
+  whatToContinueDoing: string;
+  whatToStartDoing: string;
+  improveNextWeek: string;
+  whatToImproveNextWeek: string;
+  nextWeekPriorityTaskIds: string[];
+  nextWeekProjectIds: string[];
+  nextWeekNotes: string;
+  projectReviewActions: Record<string, WeeklyProjectAction>;
+  projectReviewStates: Record<string, WeeklyProjectReviewState>;
+  habitReflection: string;
+  focusReflection: string;
+  moodSummary: string;
+  energySummary: string;
+  rating: number | null;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+  completedAt: string | null;
+};
+
+export type WeeklyReviewStats = {
+  completedTasks: number;
+  focusMinutes: number;
+  completedFocusSessions: number;
+  habitsCompleted: number;
+  habitCompletionRate: number | null;
+  overdueTasks: number;
+  projectsTouched: number;
+  topProjectByFocus: string;
+  topTagByCompleted: string;
+};
+
+export type WeeklyHabitSummary = {
+  habitId: string;
+  name: string;
+  emoji: string | null;
+  completions: number;
+  targetPerWeek: number;
+  completionRate: number;
+  missedDays: number;
+  streak: number;
+};
+
+export type WeeklyFocusSummary = {
+  focusMinutes: number;
+  completedSessions: number;
+  averageSessionMinutes: number;
+  bestFocusDay: string;
+  focusByProject: Array<{ projectId: string | null; name: string; emoji: string | null; minutes: number }>;
+  focusByTask: Array<{ taskId: string | null; title: string; emoji: string | null; minutes: number }>;
+};
+
+export type WeeklyInsightMessage = {
+  id: string;
+  title: string;
+  message: string;
+  severity: InsightSeverity;
 };
 
 export type InsightMessage = {

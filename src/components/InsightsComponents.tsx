@@ -197,9 +197,9 @@ export function InsightsPage({
     <section className="insights-page advanced-insights">
       <section className="insights-header-panel panel">
         <div>
-          <p className="eyebrow">Advanced insights</p>
-          <h3>Performance analytics</h3>
-          <p>Clear progress, focus, project, and area comparisons for the selected range.</p>
+          <p className="eyebrow">Insights</p>
+          <h3>Overview and Reporting</h3>
+          <p>Readable task, focus, project, and area summaries for the selected range.</p>
         </div>
         <AnalyticsRangeSelector
           value={selectedRange}
@@ -248,7 +248,7 @@ export function InsightsPage({
         </section>
       </InsightsSection>
 
-      <InsightsSection title="Time Trends" eyebrow="Daily, weekly, monthly" description="These charts change buckets with the selected range so progress is visible without noisy rows.">
+      <InsightsSection title="Trends" eyebrow="Tasks and focus" description="Completed tasks and focus minutes over the selected range.">
         <section className="chart-grid insights-chart-grid">
           <AnalyticsLineChart
             title="Focus minutes trend"
@@ -278,7 +278,7 @@ export function InsightsPage({
         </section>
       </InsightsSection>
 
-      <InsightsSection title="Project Performance" eyebrow="Project comparison" description="Compare projects by completed work, focus time, open work, and overdue pressure.">
+      <InsightsSection title="Projects" eyebrow="Project attention" description="Compare completed work, focus time, open work, and overdue pressure by project.">
         <section className="chart-grid insights-chart-grid">
           <AnalyticsGroupedBarChart
             title="Project comparison"
@@ -305,7 +305,7 @@ export function InsightsPage({
         </div>
       </InsightsSection>
 
-      <InsightsSection title="Area Performance" eyebrow="Life area comparison" description="Study, Business, Health, Client Work, Personal, Other, and Uncategorized are compared separately.">
+      <InsightsSection title="Areas" eyebrow="Life area load" description="Study, Business, Health, Client Work, Personal, Other, and Uncategorized compared separately.">
         <section className="chart-grid insights-chart-grid">
           <AnalyticsGroupedBarChart
             title="Area comparison"
@@ -336,7 +336,7 @@ export function InsightsPage({
         </div>
       </InsightsSection>
 
-      <InsightsSection title="Task Performance" eyebrow="Quality of completion" description="This separates important work from easy work and makes planning follow-through readable.">
+      <InsightsSection title="Task load" eyebrow="Priority and planning" description="Important work, open load, and planned-vs-completed follow-through.">
         <section className="chart-grid insights-chart-grid">
           <PriorityBreakdownChart stats={priorityStats} />
           <PlannedVsCompletedCard stats={plannedStats} range={analyticsRange} />
@@ -386,7 +386,7 @@ export function InsightsPage({
         </section>
       </InsightsSection>
 
-      <InsightsSection title="Focus Performance" eyebrow="Deep work signal" description="Focus minutes reveal what actually received protected attention.">
+      <InsightsSection title="Focus" eyebrow="Deep work signal" description="Focus minutes show what actually received protected attention.">
         <section className="chart-grid insights-chart-grid">
           <ProjectFocusChart data={focusByProject} />
           <CategoryShareChart
@@ -400,7 +400,7 @@ export function InsightsPage({
         </section>
       </InsightsSection>
 
-      <InsightsSection title="Warnings & Recommendations" eyebrow="Rule-based next actions" description="Specific recommendations are generated from project, area, priority, overdue, and planning comparisons.">
+      <InsightsSection title="Messages" eyebrow="Rule-based next actions" description="Specific recommendations generated from projects, priorities, overdue tasks, and planning data.">
         <RecommendationList recommendations={recommendations} />
       </InsightsSection>
     </section>

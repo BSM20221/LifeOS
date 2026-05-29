@@ -1,6 +1,7 @@
 import {
   BarChart3,
   CalendarClock,
+  CalendarDays,
   AlertTriangle,
   Check,
   CheckCircle2,
@@ -19,10 +20,21 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db, firebaseEnvStatus } from "./firebase";
 import { starterProjects } from "./constants";
-import { getProjectStats, useDailyPlan, useUserDailyPlans, useUserFavoriteQuotes, useUserFocusSessions, useUserProjects, useUserSavedFilters, useUserTasks } from "./dataHooks";
+import {
+  getProjectStats,
+  useDailyPlan,
+  useUserDailyPlans,
+  useUserFavoriteQuotes,
+  useUserFocusSessions,
+  useUserHabits,
+  useUserProjects,
+  useUserSavedFilters,
+  useUserTasks,
+  useWeeklyReview,
+} from "./dataHooks";
 import { parseQuickCapture } from "./taskParser";
 import type {
   DailyPlan,
@@ -31,6 +43,8 @@ import type {
   FilterCriteria,
   FocusMode,
   FocusSession,
+  Habit,
+  HabitFormValues,
   AreaPerformance,
   Project,
   ProjectFormValues,
@@ -43,6 +57,7 @@ import type {
   TaskStatus,
   TimeBlock,
   TimeBlockFormValues,
+  WeeklyReview,
 } from "./types";
 import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCountsByTag, getDueDateGroup, normalizeTags } from "./filterUtils";
 import { formatProjectDate, getFriendlyError, getNowISOString, getTodayISODate } from "./utils";
@@ -62,6 +77,7 @@ import { getDailyQuote, getRandomQuote } from "./quotes";
 import { AuthScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { FocusPage } from "./components/FocusComponents";
+import { HabitForm, HabitsPage } from "./components/HabitComponents";
 import { InsightsPage, InsightMessageList, RecommendationList } from "./components/InsightsComponents";
 import { ConfirmDialog } from "./components/ModalComponents";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
@@ -70,8 +86,10 @@ import { SavedViewForm, SavedViewsPage } from "./components/SavedViewsComponents
 import { QuickCapture, TaskEditor, TaskSection } from "./components/TaskComponents";
 import { TagList } from "./components/TaskBrowseComponents";
 import { TodayPage } from "./components/TodayComponents";
+import { WeeklyReviewPage } from "./components/WeeklyReviewComponents";
+import { calculateWeeklyStats, getCompletedTasksForWeek, getCurrentWeekId, getWeekRange } from "./weeklyUtils";
 
-type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "insights" | "settings";
+type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "insights" | "habits" | "weekly-review" | "settings";
 
 type NavItem = {
   id: PageId;
@@ -93,6 +111,10 @@ type SavedFilterEditorState = {
   filter: SavedFilter | null;
 };
 
+type HabitEditorState = {
+  habit: Habit | null;
+};
+
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "inbox", label: "Inbox", icon: Inbox },
@@ -102,6 +124,8 @@ const navItems: NavItem[] = [
   { id: "saved-views", label: "Saved Views", icon: ListFilter },
   { id: "focus", label: "Focus", icon: Timer },
   { id: "insights", label: "Insights", icon: BarChart3 },
+  { id: "habits", label: "Habits", icon: Check },
+  { id: "weekly-review", label: "Weekly Review", icon: CalendarDays },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -132,6 +156,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [taskEditor, setTaskEditor] = useState<TaskEditorState | null>(null);
   const [projectEditor, setProjectEditor] = useState<ProjectEditorState | null>(null);
   const [savedFilterEditor, setSavedFilterEditor] = useState<SavedFilterEditorState | null>(null);
+  const [habitEditor, setHabitEditor] = useState<HabitEditorState | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSavedFilterId, setSelectedSavedFilterId] = useState<string | null>(null);
   const [selectedFocusTaskId, setSelectedFocusTaskId] = useState<string | null>(null);
@@ -140,6 +165,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [quoteOffset, setQuoteOffset] = useState(0);
   const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
+  const [selectedWeekId, setSelectedWeekId] = useState(() => getCurrentWeekId());
+  const [weeklySaveState, setWeeklySaveState] = useState<{ status: "idle" | "saving" | "saved" | "error"; message: string }>({ status: "idle", message: "" });
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [todayDateId] = useState(() => getTodayDateId());
@@ -151,12 +178,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const dailyPlansState = useUserDailyPlans(user);
   const focusSessionState = useUserFocusSessions(user);
   const favoriteQuoteState = useUserFavoriteQuotes(user);
+  const habitState = useUserHabits(user);
+  const weeklyReviewState = useWeeklyReview(user, selectedWeekId);
   const { tasks } = taskState;
   const { projects } = projectState;
   const { filters: savedFilters } = savedFilterState;
   const { sessions: focusSessions } = focusSessionState;
   const { favorites: favoriteQuotes } = favoriteQuoteState;
+  const { habits } = habitState;
   const { plans: dailyPlans } = dailyPlansState;
+  const weeklyReview = weeklyReviewState.review;
   const dailyPlan = dailyPlanState.plan;
   const dailyQuote = useMemo(() => getDailyQuote(todayDateId, quoteOffset), [quoteOffset, todayDateId]);
 
@@ -165,6 +196,10 @@ function ProtectedLifeOS({ user }: { user: User }) {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  useEffect(() => {
+    setWeeklySaveState({ status: "idle", message: "" });
+  }, [selectedWeekId]);
 
   useEffect(() => {
     void setDoc(
@@ -193,11 +228,40 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const savedFilterOpenCounts = useMemo(() => getTaskCountsByFilter(tasks, savedFilters), [savedFilters, tasks]);
 
   const openTasks = tasks.filter((task) => !["done", "archived"].includes(task.status));
-  const todayTasks = tasks.filter((task) => task.status === "today");
+  const inboxTasks = openTasks.filter((task) => task.status === "inbox");
+  const todayTasks = openTasks.filter((task) => task.status === "today");
+  const upcomingTasks = openTasks.filter((task) => task.status === "upcoming");
   const doneTasks = tasks.filter((task) => task.status === "done");
   const highPriorityTasks = openTasks.filter((task) => task.priority === "high");
   const noProjectTasks = openTasks.filter((task) => !task.projectId);
   const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
+  const activeHabits = habits.filter((habit) => habit.active && !habit.archived);
+  const todayCompletedFocusSessions = focusSessions.filter((session) => session.dailyPlanDate === todayDateId && session.status === "completed").length;
+  const hasActiveFocusSession = focusSessions.some((session) => session.status === "running" || session.status === "paused");
+  const incompleteHabitsToday = activeHabits.filter((habit) => !habit.completionDates.includes(todayDateId)).length;
+  const navBadges = useMemo(
+    () => ({
+      inbox: inboxTasks.length,
+      today: todayTasks.length,
+      upcoming: upcomingTasks.length,
+      projects: projects.filter((project) => project.status === "active" || project.status === "paused").length,
+      "saved-views": savedFilters.length,
+      focus: hasActiveFocusSession ? "•" : todayCompletedFocusSessions,
+      habits: incompleteHabitsToday,
+      "weekly-review": weeklyReview.completedAt ? "" : "!",
+    }),
+    [
+      hasActiveFocusSession,
+      incompleteHabitsToday,
+      inboxTasks.length,
+      projects,
+      savedFilters.length,
+      todayCompletedFocusSessions,
+      todayTasks.length,
+      upcomingTasks.length,
+      weeklyReview.completedAt,
+    ]
+  );
   const todayStats = useMemo(() => calculateTodayStats(tasks, dailyPlan, todayDateId), [dailyPlan, tasks, todayDateId]);
   const todayFocusStats = useMemo(() => getTodayFocusStats(focusSessions, todayDateId, tasks), [focusSessions, tasks, todayDateId]);
   const dashboardRange = useMemo(
@@ -236,6 +300,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
     ) ?? null;
   const weekFocusMinutes = useMemo(() => getFocusMinutesInRange(focusSessions, dashboardRange), [dashboardRange, focusSessions]);
   const weekCompletedTasks = useMemo(() => getCompletedTasksInRange(tasks, dashboardRange).length, [dashboardRange, tasks]);
+  const currentWeekRange = useMemo(() => getWeekRange(getCurrentWeekId()), []);
+  const weeklyDashboardStats = useMemo(
+    () => calculateWeeklyStats({ tasks, projects, sessions: focusSessions, habits, range: currentWeekRange }),
+    [currentWeekRange, focusSessions, habits, projects, tasks]
+  );
   const insightMessages = useMemo(
     () =>
       generateInsightMessages({
@@ -261,9 +330,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
         ? tasks.filter((task) => task.status !== "archived")
         : activePage === "settings"
           ? tasks.filter((task) => task.status === "archived")
-          : activePage === "projects" || activePage === "saved-views" || activePage === "focus"
+          : activePage === "projects" || activePage === "saved-views" || activePage === "focus" || activePage === "insights" || activePage === "habits" || activePage === "weekly-review"
             ? []
-            : tasks.filter((task) => task.status === activePage);
+            : activePage === "inbox" || activePage === "today" || activePage === "upcoming"
+              ? tasks.filter((task) => task.status === activePage)
+              : [];
 
     return applyTaskFilters(baseTasks, taskFilters);
   }, [activePage, taskFilters, tasks]);
@@ -792,6 +863,124 @@ function ProtectedLifeOS({ user }: { user: User }) {
     });
   }
 
+  async function saveHabit(values: HabitFormValues, habit: Habit | null) {
+    const payload = normalizeHabitForm(values);
+    if (!payload.name) {
+      throw new Error("Habit name is required.");
+    }
+
+    if (habit) {
+      await updateDoc(doc(db, "users", user.uid, "habits", habit.id), {
+        ...payload,
+        id: habit.id,
+        userId: user.uid,
+        archived: habit.archived,
+        archivedAt: habit.archivedAt,
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Habit updated.");
+    } else {
+      const habitRef = doc(collection(db, "users", user.uid, "habits"));
+      await setDoc(habitRef, {
+        ...payload,
+        id: habitRef.id,
+        userId: user.uid,
+        archived: false,
+        archivedAt: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Habit created.");
+      window.location.hash = "habits";
+    }
+
+    setHabitEditor(null);
+  }
+
+  async function completeHabitToday(habit: Habit) {
+    await runAction(async () => {
+      const completionRef = doc(db, "users", user.uid, "habits", habit.id, "completions", todayDateId);
+      await setDoc(completionRef, {
+        id: todayDateId,
+        habitId: habit.id,
+        userId: user.uid,
+        date: todayDateId,
+        completedAt: serverTimestamp(),
+        note: "",
+      });
+      await updateDoc(doc(db, "users", user.uid, "habits", habit.id), {
+        id: habit.id,
+        userId: user.uid,
+        updatedAt: serverTimestamp(),
+      });
+    }, "Habit marked done for today.");
+  }
+
+  async function undoHabitToday(habit: Habit) {
+    await runAction(async () => {
+      await deleteDoc(doc(db, "users", user.uid, "habits", habit.id, "completions", todayDateId));
+      await updateDoc(doc(db, "users", user.uid, "habits", habit.id), {
+        id: habit.id,
+        userId: user.uid,
+        updatedAt: serverTimestamp(),
+      });
+    }, "Habit completion removed for today.");
+  }
+
+  function archiveHabit(habit: Habit) {
+    requestConfirmation({
+      title: "Archive habit",
+      description: `Archive "${displayWithEmoji(habit.name, habit.emoji)}"? It will move out of today's active habit list but keep its history.`,
+      confirmLabel: "Archive habit",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: async () => {
+        await updateDoc(doc(db, "users", user.uid, "habits", habit.id), {
+          id: habit.id,
+          userId: user.uid,
+          active: false,
+          archived: true,
+          archivedAt: getNowISOString(),
+          updatedAt: serverTimestamp(),
+        });
+        setActionMessage("Habit archived.");
+      },
+    });
+  }
+
+  async function unarchiveHabit(habit: Habit) {
+    await runAction(
+      () =>
+        updateDoc(doc(db, "users", user.uid, "habits", habit.id), {
+          id: habit.id,
+          userId: user.uid,
+          active: true,
+          archived: false,
+          archivedAt: null,
+          updatedAt: serverTimestamp(),
+        }),
+      "Habit restored."
+    );
+  }
+
+  function deleteHabit(habit: Habit) {
+    requestConfirmation({
+      title: "Delete habit",
+      description: `Permanently delete "${displayWithEmoji(habit.name, habit.emoji)}" and its completion history? This cannot be undone.`,
+      confirmLabel: "Delete habit",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      onConfirm: async () => {
+        const completionSnapshot = await getDocs(collection(db, "users", user.uid, "habits", habit.id, "completions"));
+        const batch = writeBatch(db);
+        completionSnapshot.docs.forEach((completionDoc) => batch.delete(completionDoc.ref));
+        batch.delete(doc(db, "users", user.uid, "habits", habit.id));
+        await batch.commit();
+        setActionMessage("Habit deleted.");
+      },
+    });
+  }
+
   function applyTagFilter(tag: string) {
     setTaskFilters({ tag });
     setSelectedSavedFilterId(null);
@@ -816,6 +1005,61 @@ function ProtectedLifeOS({ user }: { user: User }) {
     }
   }
 
+  async function saveWeeklyReview(reviewDraft: WeeklyReview, completedAt = reviewDraft.completedAt) {
+    const targetWeekId = reviewDraft.weekId || selectedWeekId;
+    const range = getWeekRange(targetWeekId);
+    const completedTaskIds = getCompletedTasksForWeek(tasks, range).map((task) => task.id);
+    const projectReviewActions = Object.fromEntries(Object.entries(reviewDraft.projectReviewActions).filter(([, action]) => Boolean(action)));
+    const projectReviewStates = Object.fromEntries(
+      Object.entries({ ...reviewDraft.projectReviewStates, ...projectReviewActions }).filter(([, action]) => Boolean(action))
+    );
+    const reviewedProjectIds = Array.from(new Set([...Object.keys(projectReviewActions), ...Object.keys(projectReviewStates), ...reviewDraft.nextWeekProjectIds]));
+    const improveNextWeek = (reviewDraft.whatToImproveNextWeek || reviewDraft.improveNextWeek).trim();
+
+    setWeeklySaveState({ status: "saving", message: "Saving weekly review..." });
+    try {
+      await setDoc(
+        doc(db, "users", user.uid, "weeklyReviews", targetWeekId),
+        {
+          id: targetWeekId,
+          userId: user.uid,
+          weekId: targetWeekId,
+          weekStartDate: range.startDate,
+          weekEndDate: range.endDate,
+          completedTaskIds,
+          reviewedProjectIds,
+          topWins: reviewDraft.topWins.trim(),
+          biggestStruggles: reviewDraft.biggestStruggles.trim(),
+          lessonsLearned: reviewDraft.lessonsLearned.trim(),
+          whatToStopDoing: reviewDraft.whatToStopDoing.trim(),
+          whatToContinueDoing: reviewDraft.whatToContinueDoing.trim(),
+          whatToStartDoing: reviewDraft.whatToStartDoing.trim(),
+          improveNextWeek,
+          whatToImproveNextWeek: improveNextWeek,
+          nextWeekPriorityTaskIds: reviewDraft.nextWeekPriorityTaskIds.slice(0, 5),
+          nextWeekProjectIds: reviewDraft.nextWeekProjectIds.slice(0, 3),
+          nextWeekNotes: reviewDraft.nextWeekNotes.trim(),
+          projectReviewActions,
+          projectReviewStates,
+          habitReflection: reviewDraft.habitReflection.trim(),
+          focusReflection: reviewDraft.focusReflection.trim(),
+          moodSummary: reviewDraft.moodSummary.trim(),
+          energySummary: reviewDraft.energySummary.trim(),
+          rating: reviewDraft.rating,
+          completedAt,
+          createdAt: reviewDraft.createdAt ?? serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setWeeklySaveState({ status: "saved", message: completedAt ? "Weekly review completed." : "Weekly review saved." });
+    } catch (error) {
+      const message = getFriendlyError(error);
+      setWeeklySaveState({ status: "error", message });
+      throw error;
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar" aria-label="Primary">
@@ -832,6 +1076,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
             <a className={activePage === id ? "active" : ""} href={`#${id}`} key={id}>
               <Icon size={18} />
               <span>{label}</span>
+              {getNavBadge(navBadges[id as keyof typeof navBadges]) ? (
+                <em className={`nav-count ${id === "weekly-review" ? "attention" : ""}`}>{getNavBadge(navBadges[id as keyof typeof navBadges])}</em>
+              ) : null}
             </a>
           ))}
         </nav>
@@ -866,6 +1113,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
               <Plus size={18} />
               New view
             </button>
+          ) : activePage === "habits" ? (
+            <button className="primary-button" type="button" onClick={() => setHabitEditor({ habit: null })}>
+              <Plus size={18} />
+              New habit
+            </button>
           ) : (
             <button
               className="primary-button"
@@ -887,6 +1139,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {dailyPlansState.error ? <StatusBanner tone="error" message={dailyPlansState.error} /> : null}
         {focusSessionState.error ? <StatusBanner tone="error" message={focusSessionState.error} /> : null}
         {favoriteQuoteState.error ? <StatusBanner tone="error" message={favoriteQuoteState.error} /> : null}
+        {habitState.error ? <StatusBanner tone="error" message={habitState.error} /> : null}
+        {weeklyReviewState.error ? <StatusBanner tone="error" message={weeklyReviewState.error} /> : null}
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -908,6 +1162,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
             focusStats={todayFocusStats}
             weekFocusMinutes={weekFocusMinutes}
             weekCompletedTasks={weekCompletedTasks}
+            weeklyStats={weeklyDashboardStats}
+            weeklyReviewCompleted={Boolean(weeklyReview.completedAt)}
             bestPerformance={bestDashboardPerformance}
             attentionPerformance={attentionDashboardPerformance}
             performanceRecommendations={dashboardRecommendations}
@@ -918,6 +1174,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onOpenFocusTask={openFocusForTask}
             onOpenInsights={() => {
               window.location.hash = "insights";
+            }}
+            onOpenWeeklyReview={() => {
+              window.location.hash = "weekly-review";
             }}
             onRefreshQuote={refreshQuote}
             onToggleFavoriteQuote={toggleFavoriteQuote}
@@ -983,20 +1242,83 @@ function ProtectedLifeOS({ user }: { user: User }) {
         ) : null}
 
         {activePage === "insights" ? (
-          <InsightsPage
+          <>
+            <InsightsPage
+              userId={user.uid}
+              tasks={tasks}
+              projects={projects}
+              focusSessions={focusSessions}
+              dailyPlan={dailyPlan}
+              dailyPlans={dailyPlans}
+              tagCounts={tagCounts}
+              todayDateId={todayDateId}
+              messages={insightMessages}
+              quote={dailyQuote}
+              quoteFavorite={isDailyQuoteFavorite}
+              onRefreshQuote={refreshQuote}
+              onToggleFavoriteQuote={toggleFavoriteQuote}
+            />
+            <section className="weekly-mini-panel panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Weekly</p>
+                  <h3>Weekly Review snapshot</h3>
+                </div>
+                <a className="secondary-button" href="#weekly-review">
+                  <CalendarDays size={17} />
+                  Review
+                </a>
+              </div>
+              <div className="dashboard-today-plan">
+                <div>
+                  <strong>{weeklyDashboardStats.completedTasks}</strong>
+                  <span>completed tasks</span>
+                </div>
+                <div>
+                  <strong>{formatMinutes(weeklyDashboardStats.focusMinutes)}</strong>
+                  <span>focus this week</span>
+                </div>
+                <div>
+                  <strong>{weeklyDashboardStats.habitCompletionRate === null ? "N/A" : `${weeklyDashboardStats.habitCompletionRate}%`}</strong>
+                  <span>habit completion</span>
+                </div>
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        {activePage === "habits" ? (
+          <HabitsPage
+            habits={habits}
+            loading={habitState.loading}
+            todayDateId={todayDateId}
+            onCreateHabit={() => setHabitEditor({ habit: null })}
+            onEditHabit={(habit) => setHabitEditor({ habit })}
+            onArchiveHabit={archiveHabit}
+            onUnarchiveHabit={unarchiveHabit}
+            onDeleteHabit={deleteHabit}
+            onCompleteToday={completeHabitToday}
+            onUndoToday={undoHabitToday}
+          />
+        ) : null}
+
+        {activePage === "weekly-review" ? (
+          <WeeklyReviewPage
             userId={user.uid}
+            weekId={selectedWeekId}
+            review={weeklyReview}
+            exists={weeklyReviewState.exists}
+            loading={weeklyReviewState.loading}
+            saveState={weeklySaveState}
             tasks={tasks}
             projects={projects}
             focusSessions={focusSessions}
-            dailyPlan={dailyPlan}
             dailyPlans={dailyPlans}
-            tagCounts={tagCounts}
-            todayDateId={todayDateId}
-            messages={insightMessages}
-            quote={dailyQuote}
-            quoteFavorite={isDailyQuoteFavorite}
-            onRefreshQuote={refreshQuote}
-            onToggleFavoriteQuote={toggleFavoriteQuote}
+            habits={habits}
+            onWeekChange={setSelectedWeekId}
+            onSave={(reviewDraft) => saveWeeklyReview(reviewDraft)}
+            onComplete={(reviewDraft) => saveWeeklyReview(reviewDraft, getNowISOString())}
+            onReopen={(reviewDraft) => saveWeeklyReview(reviewDraft, null)}
           />
         ) : null}
 
@@ -1075,7 +1397,13 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} savedFilters={savedFilters} tagCount={tagCounts.length} /> : null}
 
-        {activePage !== "projects" && activePage !== "saved-views" && activePage !== "today" && activePage !== "focus" && activePage !== "insights" ? (
+        {activePage !== "projects" &&
+        activePage !== "saved-views" &&
+        activePage !== "today" &&
+        activePage !== "focus" &&
+        activePage !== "insights" &&
+        activePage !== "habits" &&
+        activePage !== "weekly-review" ? (
           <TaskSection
             loading={taskState.loading}
             page={activePage}
@@ -1134,6 +1462,10 @@ function ProtectedLifeOS({ user }: { user: User }) {
         />
       ) : null}
 
+      {habitEditor ? (
+        <HabitForm habit={habitEditor.habit} onClose={() => setHabitEditor(null)} onSave={(values) => saveHabit(values, habitEditor.habit)} />
+      ) : null}
+
       {confirmDialog ? (
         <ConfirmDialog dialog={confirmDialog} busy={confirmBusy} onCancel={closeConfirmDialog} onConfirm={() => void handleConfirmDialog()} />
       ) : null}
@@ -1159,6 +1491,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
     focusStats,
     weekFocusMinutes,
     weekCompletedTasks,
+    weeklyStats,
+    weeklyReviewCompleted,
     bestPerformance,
     attentionPerformance,
     performanceRecommendations,
@@ -1168,6 +1502,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
     onQuickCreate,
     onOpenFocusTask,
     onOpenInsights,
+    onOpenWeeklyReview,
     onRefreshQuote,
     onToggleFavoriteQuote,
     onOpenSavedFilter,
@@ -1192,6 +1527,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
     focusStats: ReturnType<typeof getTodayFocusStats>;
     weekFocusMinutes: number;
     weekCompletedTasks: number;
+    weeklyStats: ReturnType<typeof calculateWeeklyStats>;
+    weeklyReviewCompleted: boolean;
     bestPerformance: ProjectPerformance | AreaPerformance | null;
     attentionPerformance: ProjectPerformance | AreaPerformance | null;
     performanceRecommendations: ReturnType<typeof generatePerformanceRecommendations>;
@@ -1201,6 +1538,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
     onQuickCreate: (value: string) => Promise<void>;
     onOpenFocusTask: (task: Task) => void;
     onOpenInsights: () => void;
+    onOpenWeeklyReview: () => void;
     onRefreshQuote: () => void;
     onToggleFavoriteQuote: () => void;
     onOpenSavedFilter: (filter: SavedFilter) => void;
@@ -1299,6 +1637,38 @@ function ProtectedLifeOS({ user }: { user: User }) {
               </button>
             </div>
             {performanceRecommendations.length > 0 ? <RecommendationList recommendations={performanceRecommendations.slice(0, 3)} /> : <InsightMessageList messages={insightMessages.slice(0, 3)} />}
+          </article>
+
+          <article className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Weekly Review</p>
+                <h3>{weeklyReviewCompleted ? "This week is reviewed" : "Close the loop"}</h3>
+              </div>
+              <button className="secondary-button" type="button" onClick={onOpenWeeklyReview}>
+                <CalendarDays size={17} />
+                Review
+              </button>
+            </div>
+            <div className="dashboard-today-plan">
+              <div>
+                <strong>{weeklyStats.completedTasks}</strong>
+                <span>completed this week</span>
+              </div>
+              <div>
+                <strong>{formatMinutes(weeklyStats.focusMinutes)}</strong>
+                <span>focus</span>
+              </div>
+              <div>
+                <strong>{weeklyStats.habitCompletionRate === null ? "N/A" : `${weeklyStats.habitCompletionRate}%`}</strong>
+                <span>habits</span>
+              </div>
+            </div>
+            <p className="panel-copy">
+              {weeklyReviewCompleted
+                ? "Weekly reflection is complete. You can reopen it anytime."
+                : "Review wins, struggles, focus, habits, and next-week priorities."}
+            </p>
           </article>
 
           <article className="panel">
@@ -1567,6 +1937,28 @@ function normalizeTaskForm(values: TaskFormValues) {
   };
 }
 
+function normalizeHabitForm(values: HabitFormValues) {
+  const targetPerWeek = Math.max(1, Math.min(7, Number(values.targetPerWeek || 1)));
+
+  return {
+    name: values.name.trim(),
+    description: values.description.trim(),
+    emoji: values.emoji || null,
+    color: values.color || "#10b981",
+    frequency: values.frequency,
+    targetPerWeek,
+    active: values.active,
+  };
+}
+
+function getNavBadge(value: number | string | undefined) {
+  if (typeof value === "number") {
+    return value > 0 ? String(value) : "";
+  }
+
+  return value ?? "";
+}
+
 function getPageFromHash(): PageId {
   const hash = window.location.hash.replace("#", "");
   return navItems.some((item) => item.id === hash) ? (hash as PageId) : "dashboard";
@@ -1590,6 +1982,10 @@ function getPageHeadline(page: PageId) {
       return "Start Pomodoro sessions, protect Deep Work, and track focused minutes.";
     case "insights":
       return "Notice patterns across tasks, projects, planning, and focus.";
+    case "habits":
+      return "Build small habits that compound.";
+    case "weekly-review":
+      return "Reflect on the week, review patterns, and choose next-week priorities.";
     case "settings":
       return "Confirm account, Firebase, and archived task state.";
   }

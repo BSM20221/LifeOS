@@ -1,4 +1,4 @@
-import { Archive, CalendarClock, Check, CheckCircle2, Clock3, Pencil, Plus, Save, Trash2, Undo2, X } from "lucide-react";
+import { Archive, CalendarClock, Check, CheckCircle2, Clock3, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { energyLevels, priorities, taskStatuses } from "../constants";
 import type { EnergyLevel, FilterCriteria, Project, TagCount, Task, TaskFormValues, TaskPriority, TaskStatus } from "../types";
@@ -156,22 +156,20 @@ export function TaskRow({
   return (
     <section className={`task-row ${task.status === "done" ? "is-done" : ""}`}>
       <header className="task-card-header">
+        <button
+          type="button"
+          className={`task-check-button ${task.status === "done" ? "checked" : ""}`}
+          aria-label={task.status === "done" ? `Undo ${task.title}` : `Mark ${task.title} done`}
+          onClick={() => (task.status === "done" ? onUndoDone(task) : onMarkDone(task))}
+        >
+          {task.status === "done" ? <Check size={15} /> : null}
+        </button>
+
         <div className="task-title-line">
           <strong>{displayWithEmoji(task.title, task.emoji)}</strong>
         </div>
 
         <div className="task-primary-actions" aria-label={`Primary actions for ${task.title}`}>
-          {task.status === "done" ? (
-            <button type="button" className="icon-text-button" onClick={() => onUndoDone(task)}>
-              <Undo2 size={16} />
-              Undo
-            </button>
-          ) : (
-            <button type="button" className="icon-text-button" onClick={() => onMarkDone(task)}>
-              <Check size={16} />
-              Done
-            </button>
-          )}
           <button type="button" className="icon-button task-icon-button" aria-label={`Edit ${task.title}`} onClick={() => onEdit(task)}>
             <Pencil size={16} />
           </button>

@@ -67,6 +67,54 @@ service cloud.firestore {
           && request.resource.data.id == sessionId;
       }
 
+      match /weeklyReviews/{weekId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.id == weekId
+          && request.resource.data.weekId == weekId;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid
+          && request.resource.data.id == weekId
+          && request.resource.data.weekId == weekId;
+      }
+
+      match /habits/{habitId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid
+          && request.resource.data.id == habitId;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid
+          && request.resource.data.id == habitId;
+
+        match /completions/{dateId} {
+          allow read, delete: if ownsUserSpace(uid);
+          allow create: if ownsUserSpace(uid)
+            && request.resource.data.userId == uid
+            && request.resource.data.habitId == habitId
+            && request.resource.data.id == dateId
+            && request.resource.data.date == dateId;
+          allow update: if ownsUserSpace(uid)
+            && resource.data.userId == uid
+            && request.resource.data.userId == uid
+            && request.resource.data.habitId == habitId
+            && request.resource.data.id == dateId
+            && request.resource.data.date == dateId;
+        }
+      }
+
+      match /recurringTasks/{recurringTaskId} {
+        allow read, delete: if ownsUserSpace(uid);
+        allow create: if ownsUserSpace(uid)
+          && request.resource.data.userId == uid;
+        allow update: if ownsUserSpace(uid)
+          && resource.data.userId == uid
+          && request.resource.data.userId == uid;
+      }
+
       match /favoriteQuotes/{quoteId} {
         allow read, delete: if ownsUserSpace(uid);
         allow create: if ownsUserSpace(uid)
