@@ -1,0 +1,24 @@
+{
+  "name": "LifeOS",
+  "short_name": "LifeOS",
+  "description": "A private personal operating dashboard for tasks, focus, habits, reminders, and weekly review.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f3ec",
+  "theme_color": "#2a5f48",
+  "icons": [
+    {
+      "src": "/lifeos-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/lifeos-maskable-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

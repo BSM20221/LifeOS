@@ -109,10 +109,12 @@ service cloud.firestore {
       match /recurringTasks/{recurringTaskId} {
         allow read, delete: if ownsUserSpace(uid);
         allow create: if ownsUserSpace(uid)
-          && request.resource.data.userId == uid;
+          && request.resource.data.userId == uid
+          && request.resource.data.id == recurringTaskId;
         allow update: if ownsUserSpace(uid)
           && resource.data.userId == uid
-          && request.resource.data.userId == uid;
+          && request.resource.data.userId == uid
+          && request.resource.data.id == recurringTaskId;
       }
 
       match /favoriteQuotes/{quoteId} {

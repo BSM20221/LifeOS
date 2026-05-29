@@ -1,19 +1,42 @@
 # LifeOS v2
 
-LifeOS v2 is a Firebase-backed personal task workspace with authentication, protected app pages, quick capture, user-specific Firestore task storage, project management, tags, saved task views, daily planning, focus sessions, and personal insights.
+LifeOS is a Firebase-backed personal productivity workspace for tasks, projects, planning, focus sessions, habits, reminders, insights, and weekly review.
 
-## Stack
+## Features
+
+- Email/password Firebase Auth with protected app pages
+- Firestore task CRUD with quick capture, tags, priority, due date/time, reminders, and recurring task rules
+- Projects with progress, areas, status, emojis, and task assignment
+- Saved Views with reusable task filters
+- Today planning with Top 3 priorities, Deep Work, time blocks, and daily reflection
+- Focus timer with Pomodoro sessions and focus analytics
+- Habits with daily completion and weekly review integration
+- Weekly Review with saved reflections and next-week planning
+- Insights, reporting, daily quotes, and rule-based recommendations
+- Custom accessible confirmation modals
+- PWA basics: manifest, service worker, offline fallback, install guidance
+- Settings export/import/delete tools for user-owned LifeOS data
+
+## Tech Stack
 
 - Vite
 - React
 - TypeScript
 - Firebase Auth
 - Cloud Firestore
+- Firebase Hosting
+- Recharts
 - Lucide React icons
 
-## Required Firebase Environment
+## Local Setup
 
-Copy `.env.example` to `.env` and fill in the Firebase web app values:
+```bash
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Fill `.env` with your Firebase web app config:
 
 ```bash
 VITE_FIREBASE_API_KEY=
@@ -24,104 +47,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
-## Firestore Data Model
-
-Tasks are stored under the signed-in user's document:
-
-```text
-users/{uid}/tasks/{taskId}
-```
-
-Projects are stored under the signed-in user's document:
-
-```text
-users/{uid}/projects/{projectId}
-```
-
-Saved filters are stored under the signed-in user's document:
-
-```text
-users/{uid}/filters/{filterId}
-```
-
-Daily plans are stored under the signed-in user's document by date:
-
-```text
-users/{uid}/dailyPlans/{YYYY-MM-DD}
-```
-
-Focus sessions are stored under the signed-in user's document:
-
-```text
-users/{uid}/focusSessions/{sessionId}
-```
-
-Favorite quotes are stored under the signed-in user's document:
-
-```text
-users/{uid}/favoriteQuotes/{quoteId}
-```
-
-Each task stores:
-
-```text
-title, description, status, priority, dueDate, tags, estimatedMinutes,
-energyLevel, createdAt, updatedAt, completedAt, notes, userId, projectId
-```
-
-Each project stores:
-
-```text
-id, userId, name, description, color, status, area, createdAt,
-updatedAt, archivedAt, completedAt
-```
-
-Each saved filter stores:
-
-```text
-id, userId, name, description, query, color, createdAt, updatedAt
-```
-
-Each daily plan stores:
-
-```text
-id, userId, date, topTaskIds, deepWorkTaskId, timeBlocks,
-reflection, createdAt, updatedAt
-```
-
-Each focus session stores:
-
-```text
-id, userId, taskId, projectId, dailyPlanDate, mode, plannedMinutes,
-actualMinutes, status, startedAt, pausedAt, completedAt, cancelledAt,
-notes, createdAt, updatedAt
-```
-
-Each favorite quote stores:
-
-```text
-id, userId, quoteId, createdAt
-```
-
-Firestore rules in `firestore.rules` allow authenticated users to access only:
-
-```text
-users/{uid}
-users/{uid}/tasks/{taskId}
-users/{uid}/projects/{projectId}
-users/{uid}/filters/{filterId}
-users/{uid}/dailyPlans/{dateId}
-users/{uid}/focusSessions/{sessionId}
-users/{uid}/favoriteQuotes/{quoteId}
-users/{uid}/settings/main
-```
-
-## Run Locally
-
-```bash
-npm install
-npm run dev
-```
+Do not commit `.env`. The repository keeps only `.env.example`.
 
 ## Build
 
@@ -129,56 +55,102 @@ npm run dev
 npm run build
 ```
 
-## Quick Capture
+## Firebase Setup
 
-Quick capture is available from Dashboard and Inbox. It supports:
+Enable:
 
-- `#tag` for tags
-- `!low`, `!medium`, `!high`, `!urgent` for priority
-- `+ProjectName` for exact project assignment
+- Firebase Authentication: Email/password provider
+- Cloud Firestore
+- Firebase Hosting, if deploying
 
-Example:
+Deploy Firestore rules:
 
-```text
-Study modal verbs #german !high +German B2
+```bash
+firebase deploy --only firestore:rules
 ```
 
-## Tags And Saved Views
+Deploy the Vite app to Firebase Hosting:
 
-Tags are derived from existing tasks. They are normalized to lowercase, deduplicated, and available in task filters and the Saved Views page.
-
-Saved Views use a simple structured query object with optional fields:
-
-```text
-searchText, status, priority, projectId, tag, dueDateGroup, energyLevel
+```bash
+npm run build
+firebase deploy --only hosting
 ```
 
-Due date groups are:
+`firebase.json` is configured for:
+
+- `dist` as the hosting public directory
+- SPA rewrite to `/index.html`
+- `sw.js` served with no-cache headers
+
+## Firestore Data Model
+
+All user data is scoped under:
 
 ```text
-no-due-date, overdue, today, tomorrow, this-week, later
+users/{uid}
 ```
 
-## Today Planning
+Collections:
 
-The Today page stores one daily plan per user and date. It supports:
+```text
+users/{uid}/tasks/{taskId}
+users/{uid}/projects/{projectId}
+users/{uid}/filters/{filterId}
+users/{uid}/dailyPlans/{YYYY-MM-DD}
+users/{uid}/focusSessions/{sessionId}
+users/{uid}/favoriteQuotes/{quoteId}
+users/{uid}/habits/{habitId}
+users/{uid}/habits/{habitId}/completions/{dateId}
+users/{uid}/weeklyReviews/{weekId}
+users/{uid}/settings/main
+```
 
-- Top 3 priority task selection
-- One Deep Work task
-- Time blocks with optional task assignment
-- Daily reflection with energy and mood
-- Today summary metrics for task count, overdue count, estimates, and completion
+Recurring task fields and reminders are stored on task documents.
 
-## Focus Timer
+## Backup And Restore
 
-The Focus page supports Pomodoro, short break, long break, and custom timers. Sessions can be linked to tasks and projects, paused, resumed, cancelled, completed, and recovered after refresh from Firestore. Browser notifications are optional and requested only after clicking the notification button.
+Settings includes Data & Backup tools:
 
-## Insights And Personalization
+- Export downloads `lifeos-backup-YYYY-MM-DD.json`
+- Import validates a LifeOS backup and merges it into the current signed-in user
+- Import skips documents whose IDs already exist
+- Delete app data removes current user LifeOS data but keeps the Auth account
+- Delete account attempts to delete app data, then the Firebase Auth account
 
-The Insights page summarizes tasks, projects, daily plans, and focus sessions with lightweight in-app charts. Rule-based insight messages are generated locally from user data; no AI or external analytics services are used.
+Backups do not include Firebase secrets or `.env` values.
 
-Tasks and projects support optional emoji personalization through a preset picker. Existing records without emojis continue to work normally.
+## PWA Notes
 
-Daily quotes are selected from an in-app curated list. Favorite quotes are saved to `users/{uid}/favoriteQuotes`.
+LifeOS includes:
 
-Destructive actions use custom accessible LifeOS confirmation dialogs instead of native browser alerts or confirms.
+- `manifest.webmanifest`
+- SVG app icons
+- service worker shell caching
+- offline fallback page
+
+The current service worker does not implement full offline Firestore writes or conflict resolution. Saving changes requires a connection.
+
+## Security Notes
+
+`firestore.rules` denies public reads/writes and scopes all app data to `request.auth.uid == uid`.
+
+Review rules before deploying changes. Firebase web config values are public identifiers, but `.env` should still stay out of Git.
+
+## Known Limitations
+
+- No AI features
+- No calendar sync
+- No team collaboration
+- No payments
+- No native mobile app
+- No full offline create/edit/sync yet
+- Browser notifications work while LifeOS is open; background reminders require a future PWA/service worker phase
+
+## Roadmap
+
+- Offline-safe write queue
+- Calendar integration
+- More advanced reporting
+- Optional AI planning assistance
+- Team/collaboration features
+- Native mobile app exploration

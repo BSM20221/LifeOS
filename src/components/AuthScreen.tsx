@@ -112,6 +112,12 @@ export function AuthScreen() {
             {submitting ? "Working..." : mode === "login" ? "Login" : "Create account"}
           </button>
         </form>
+
+        <div className="auth-links" aria-label="Legal links">
+          <a href="#privacy">Privacy</a>
+          <span aria-hidden="true">|</span>
+          <a href="#terms">Terms</a>
+        </div>
       </section>
     </main>
   );

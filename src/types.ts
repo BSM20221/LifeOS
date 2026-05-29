@@ -503,7 +503,11 @@ export type ConfirmDialogState = {
   confirmLabel: string;
   cancelLabel: string;
   variant: "normal" | "destructive";
-  onConfirm: () => Promise<void> | void;
+  requiredPhrase?: string;
+  passwordLabel?: string;
+  passwordPlaceholder?: string;
+  passwordRequired?: boolean;
+  onConfirm: (password?: string) => Promise<void> | void;
 };
 
 export type FavoriteQuote = {

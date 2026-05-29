@@ -1,5 +1,5 @@
-import { Bell, BellRing, Clock3, Repeat2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Bell, BellRing, CalendarClock, Clock3, Plus, Repeat2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   NotificationPermissionState,
   Reminder,
@@ -16,13 +16,47 @@ import { titleCase } from "../utils";
 import { Button, EmptyState } from "./Common";
 import { displayWithEmoji } from "../emojiPresets";
 
-export function DueTimeField({ dueDate, value, onChange }: { dueDate: string; value: string; onChange: (value: string) => void }) {
+export function DueDateTimeFields({
+  dueDate,
+  dueTime,
+  onChange,
+}: {
+  dueDate: string;
+  dueTime: string;
+  onChange: (values: { dueDate: string; dueTime: string }) => void;
+}) {
+  const dueTimeHelpId = "task-due-time-help";
+
   return (
-    <label>
-      Due time
-      <input type="time" value={value} disabled={!dueDate} onChange={(event) => onChange(event.target.value)} />
-      {!dueDate ? <small className="field-hint">Set a due date before adding a due time.</small> : null}
-    </label>
+    <fieldset className="due-date-time-fields">
+      <legend>
+        <CalendarClock size={15} />
+        Due date & time
+      </legend>
+      <label>
+        Date
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(event) => onChange({ dueDate: event.target.value, dueTime: event.target.value ? dueTime : "" })}
+        />
+      </label>
+      <label className={!dueDate ? "is-disabled" : ""}>
+        Time
+        {dueDate ? (
+          <input type="time" value={dueTime} onChange={(event) => onChange({ dueDate, dueTime: event.target.value })} />
+        ) : (
+          <span className="disabled-time-placeholder" role="textbox" aria-disabled="true" aria-describedby={dueTimeHelpId}>
+            No time
+          </span>
+        )}
+      </label>
+      {!dueDate ? (
+        <small className="field-hint" id={dueTimeHelpId}>
+          Choose a due date first to add a time.
+        </small>
+      ) : null}
+    </fieldset>
   );
 }
 
@@ -49,35 +83,39 @@ export function RecurrenceEditor({ values, onChange }: { values: TaskFormValues;
     completedAt: null,
     isDemoData: false,
   } as Task;
+  const summary = values.repeatEnabled ? formatRecurrenceSummary(summaryTask) || "Repeat is enabled" : "No repeat";
+
+  function setRepeatEnabled(enabled: boolean) {
+    onChange({
+      ...values,
+      repeatEnabled: enabled,
+      repeatFrequency: enabled && values.repeatFrequency === "none" ? "daily" : values.repeatFrequency,
+      nextDueDate: enabled ? values.dueDate : "",
+    });
+  }
 
   return (
-    <section className="task-advanced-section">
-      <div className="task-advanced-header">
-        <Repeat2 size={17} />
-        <div>
+    <section className={`task-advanced-section repeat-section ${values.repeatEnabled ? "is-expanded" : "is-collapsed"}`}>
+      <div className="task-advanced-header compact-settings-header">
+        <Repeat2 size={17} aria-hidden="true" />
+        <div className="advanced-title-block">
           <strong>Repeat</strong>
-          <span>{values.repeatEnabled ? formatRecurrenceSummary(summaryTask) || "Repeat is enabled" : "No repeat"}</span>
+          <span>{summary}</span>
         </div>
+        <button
+          type="button"
+          className={`switch-control ${values.repeatEnabled ? "is-on" : ""}`}
+          role="switch"
+          aria-checked={values.repeatEnabled}
+          aria-expanded={values.repeatEnabled}
+          onClick={() => setRepeatEnabled(!values.repeatEnabled)}
+        >
+          <span>{values.repeatEnabled ? "On" : "Off"}</span>
+        </button>
       </div>
 
-      <label className="inline-check">
-        <input
-          type="checkbox"
-          checked={values.repeatEnabled}
-          onChange={(event) =>
-            onChange({
-              ...values,
-              repeatEnabled: event.target.checked,
-              repeatFrequency: event.target.checked && values.repeatFrequency === "none" ? "daily" : values.repeatFrequency,
-              nextDueDate: event.target.checked ? values.dueDate : "",
-            })
-          }
-        />
-        Repeat this task
-      </label>
-
       {values.repeatEnabled ? (
-        <div className="recurrence-grid">
+        <div className="recurrence-grid compact-settings-body">
           <label>
             Frequency
             <select value={values.repeatFrequency} onChange={(event) => onChange({ ...values, repeatFrequency: event.target.value as RepeatFrequency })}>
@@ -167,11 +205,27 @@ export function RecurrenceEditor({ values, onChange }: { values: TaskFormValues;
 }
 
 export function ReminderEditor({ values, onChange }: { values: TaskFormValues; onChange: (values: TaskFormValues) => void }) {
-  const [preset, setPreset] = useState<(typeof reminderPresetOptions)[number]["value"]>("at-due");
   const [customDate, setCustomDate] = useState(values.dueDate);
   const [customTime, setCustomTime] = useState(values.dueTime || "09:00");
   const dueDateTimeAvailable = Boolean(values.dueDate && values.dueTime);
+  const [preset, setPreset] = useState<(typeof reminderPresetOptions)[number]["value"]>(() => (dueDateTimeAvailable ? "at-due" : "custom"));
   const selectedPreset = reminderPresetOptions.find((option) => option.value === preset) ?? reminderPresetOptions[0];
+  const canAddReminder = preset === "custom" ? Boolean(customDate && customTime) : dueDateTimeAvailable;
+  const helperText = dueDateTimeAvailable
+    ? "Choose when LifeOS should remind you."
+    : "Due-based reminders need a due date and time. Custom reminders still work.";
+
+  useEffect(() => {
+    if (!dueDateTimeAvailable && preset !== "custom") {
+      setPreset("custom");
+    }
+  }, [dueDateTimeAvailable, preset]);
+
+  useEffect(() => {
+    if (values.dueDate && !customDate) {
+      setCustomDate(values.dueDate);
+    }
+  }, [customDate, values.dueDate]);
 
   function addReminder() {
     const now = new Date().toISOString();
@@ -199,39 +253,44 @@ export function ReminderEditor({ values, onChange }: { values: TaskFormValues; o
   }
 
   return (
-    <section className="task-advanced-section">
-      <div className="task-advanced-header">
-        <Bell size={17} />
-        <div>
+    <section className="task-advanced-section reminder-section">
+      <div className="task-advanced-header compact-settings-header">
+        <Bell size={17} aria-hidden="true" />
+        <div className="advanced-title-block">
           <strong>Reminders</strong>
           <span>{values.reminders.length > 0 ? `${values.reminders.length} reminder${values.reminders.length === 1 ? "" : "s"}` : "No reminders"}</span>
         </div>
       </div>
 
-      <div className="reminder-list">
-        {values.reminders.map((reminder) => (
-          <div className="reminder-editor-row" key={reminder.id}>
-            <label className="inline-check">
-              <input
-                type="checkbox"
-                checked={reminder.enabled}
-                onChange={() =>
-                  onChange({
-                    ...values,
-                    reminders: values.reminders.map((item) => (item.id === reminder.id ? { ...item, enabled: !item.enabled, updatedAt: new Date().toISOString() } : item)),
-                  })
-                }
-              />
-              {formatReminderTime(reminder.snoozedUntil || reminder.remindAt)}
-            </label>
-            <button type="button" className="icon-button task-icon-button" aria-label="Remove reminder" onClick={() => onChange({ ...values, reminders: values.reminders.filter((item) => item.id !== reminder.id) })}>
-              <X size={15} />
-            </button>
-          </div>
-        ))}
-      </div>
+      {values.reminders.length > 0 ? (
+        <div className="reminder-list">
+          {values.reminders.map((reminder) => (
+            <div className="reminder-editor-row" key={reminder.id}>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={reminder.enabled}
+                  onChange={() =>
+                    onChange({
+                      ...values,
+                      reminders: values.reminders.map((item) => (item.id === reminder.id ? { ...item, enabled: !item.enabled, updatedAt: new Date().toISOString() } : item)),
+                    })
+                  }
+                />
+                <span>
+                  <strong>{titleCase(reminder.type.replace("-", " "))}</strong>
+                  <em>{formatReminderTime(reminder.snoozedUntil || reminder.remindAt)}</em>
+                </span>
+              </label>
+              <button type="button" className="icon-button task-icon-button" aria-label="Remove reminder" onClick={() => onChange({ ...values, reminders: values.reminders.filter((item) => item.id !== reminder.id) })}>
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
-      <div className="reminder-add-grid">
+      <div className="reminder-add-grid compact-reminder-composer">
         <label>
           Notify me
           <select value={preset} onChange={(event) => setPreset(event.target.value as typeof preset)}>
@@ -254,11 +313,12 @@ export function ReminderEditor({ values, onChange }: { values: TaskFormValues; o
             </label>
           </>
         ) : null}
-        <Button type="button" variant="secondary" onClick={addReminder} disabled={preset !== "custom" && !dueDateTimeAvailable}>
+        <Button type="button" variant="secondary" onClick={addReminder} disabled={!canAddReminder}>
+          <Plus size={15} />
           Add reminder
         </Button>
       </div>
-      {!dueDateTimeAvailable ? <small className="field-hint">Set both due date and due time for due-based reminders, or choose a custom reminder.</small> : null}
+      <small className="field-hint">{helperText}</small>
     </section>
   );
 }

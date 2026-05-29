@@ -8,7 +8,7 @@ import { normalizeTags } from "../filterUtils";
 import { TagChip, TaskFilters } from "./TaskBrowseComponents";
 import { EmojiPicker } from "./EmojiPicker";
 import { displayWithEmoji } from "../emojiPresets";
-import { DueTimeField, RecurrenceEditor, RecurrenceSummary, ReminderBadge, ReminderEditor } from "./ReminderComponents";
+import { DueDateTimeFields, RecurrenceEditor, RecurrenceSummary, ReminderBadge, ReminderEditor } from "./ReminderComponents";
 import { sortTasksByDueDateTime } from "../recurrenceUtils";
 
 export function QuickCapture({
@@ -326,12 +326,11 @@ export function TaskEditor({
               onChange={(projectId) => setValues({ ...values, projectId })}
             />
 
-            <label>
-              Due date
-              <input type="date" value={values.dueDate} onChange={(event) => setValues({ ...values, dueDate: event.target.value })} />
-            </label>
-
-            <DueTimeField dueDate={values.dueDate} value={values.dueTime} onChange={(dueTime) => setValues({ ...values, dueTime })} />
+            <DueDateTimeFields
+              dueDate={values.dueDate}
+              dueTime={values.dueTime}
+              onChange={({ dueDate, dueTime }) => setValues({ ...values, dueDate, dueTime })}
+            />
 
             <label>
               Estimate

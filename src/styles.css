@@ -776,6 +776,25 @@ h1 {
   line-height: 1.55;
 }
 
+.auth-links {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  color: var(--color-muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.auth-links a {
+  color: var(--color-muted);
+  text-decoration: none;
+}
+
+.auth-links a:hover {
+  color: var(--color-primary);
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6167,13 +6186,81 @@ textarea:focus-visible {
 }
 
 /* Recurring tasks and reminders */
+.modal-panel .task-form {
+  gap: 12px;
+}
+
+.modal-panel .task-form > label {
+  gap: 6px;
+}
+
+.modal-panel .task-form textarea {
+  min-height: 74px;
+}
+
+.modal-panel .form-grid {
+  gap: 10px;
+}
+
+.due-date-time-fields {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 9px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  min-width: 0;
+  padding: 11px;
+}
+
+.due-date-time-fields legend {
+  align-items: center;
+  color: var(--color-muted);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 900;
+  gap: 6px;
+  padding: 0 5px;
+}
+
+.due-date-time-fields .field-hint {
+  grid-column: 1 / -1;
+}
+
+.due-date-time-fields label.is-disabled {
+  color: rgba(82, 97, 91, 0.72);
+}
+
+.disabled-time-placeholder {
+  align-items: center;
+  background: rgba(246, 243, 236, 0.72);
+  border: 1px dashed rgba(22, 32, 29, 0.16);
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
+  display: flex;
+  font-size: 0.86rem;
+  font-weight: 850;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
 .task-advanced-section {
   background: var(--color-surface-soft);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   display: grid;
-  gap: 12px;
-  padding: 13px;
+  gap: 10px;
+  padding: 11px;
+}
+
+.repeat-section.is-collapsed {
+  padding-block: 9px;
+}
+
+.repeat-section.is-expanded,
+.reminder-section {
+  background: rgba(246, 243, 236, 0.76);
 }
 
 .task-advanced-header {
@@ -6183,14 +6270,24 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.compact-settings-header {
+  border-radius: var(--radius-md);
+  min-height: 42px;
+}
+
 .task-advanced-header > div {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
+.advanced-title-block {
+  flex: 1;
+}
+
 .task-advanced-header strong {
   color: var(--color-text-strong);
+  font-size: 0.92rem;
 }
 
 .task-advanced-header span,
@@ -6199,6 +6296,67 @@ textarea:focus-visible {
   font-size: 0.8rem;
   font-weight: 750;
   line-height: 1.35;
+}
+
+.task-advanced-header span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.switch-control {
+  align-items: center;
+  background: rgba(22, 32, 29, 0.1);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: flex-start;
+  padding: 2px;
+  position: relative;
+  width: 52px;
+}
+
+.switch-control::after {
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(22, 32, 29, 0.18);
+  content: "";
+  height: 22px;
+  transform: translateX(0);
+  transition: transform 160ms ease;
+  width: 22px;
+}
+
+.switch-control.is-on {
+  background: var(--color-primary);
+}
+
+.switch-control.is-on::after {
+  transform: translateX(24px);
+}
+
+.switch-control:focus-visible {
+  border-color: rgba(35, 104, 115, 0.62);
+  box-shadow: 0 0 0 4px rgba(35, 104, 115, 0.14);
+  outline: none;
+}
+
+.switch-control span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.compact-settings-body {
+  border-top: 1px solid rgba(22, 32, 29, 0.08);
+  padding-top: 10px;
 }
 
 .inline-check {
@@ -6213,11 +6371,57 @@ textarea:focus-visible {
   min-height: auto;
 }
 
+.task-form input[type="checkbox"],
+.task-form input[type="radio"],
+.inline-check input[type="checkbox"],
+.weekday-picker input[type="checkbox"] {
+  accent-color: var(--color-primary);
+  background: transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  flex: 0 0 auto;
+  height: 16px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  width: 16px;
+}
+
+.task-form input[type="checkbox"]:focus,
+.task-form input[type="radio"]:focus {
+  box-shadow: none;
+}
+
+.task-form input[type="checkbox"]:focus-visible,
+.task-form input[type="radio"]:focus-visible {
+  outline: 2px solid rgba(35, 104, 115, 0.62);
+  outline-offset: 2px;
+}
+
+.weekday-picker input[type="checkbox"] {
+  height: 14px;
+  width: 14px;
+}
+
 .recurrence-grid,
 .reminder-add-grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-reminder-composer {
+  align-items: end;
+  grid-template-columns: minmax(180px, 1fr) auto;
+}
+
+.compact-reminder-composer .secondary-button {
+  align-self: end;
+  gap: 7px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 0 13px;
+  white-space: nowrap;
 }
 
 .weekday-picker {
@@ -6264,6 +6468,29 @@ textarea:focus-visible {
   justify-content: space-between;
   min-width: 0;
   padding: 9px 10px;
+}
+
+.reminder-editor-row .inline-check {
+  flex: 1;
+  min-width: 0;
+}
+
+.reminder-editor-row .inline-check span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reminder-editor-row .inline-check strong {
+  color: var(--color-text-strong);
+  font-size: 0.82rem;
+}
+
+.reminder-editor-row .inline-check em {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .reminder-chip,
@@ -6324,6 +6551,7 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .due-date-time-fields,
   .recurrence-grid,
   .reminder-add-grid {
     grid-template-columns: 1fr;

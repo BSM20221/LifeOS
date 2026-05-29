@@ -19,9 +19,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
-import { auth, db, firebaseEnvStatus } from "./firebase";
+import { deleteUser, EmailAuthProvider, onAuthStateChanged, reauthenticateWithCredential, signOut, type User } from "firebase/auth";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { auth, db } from "./firebase";
 import { starterProjects } from "./constants";
 import {
   getProjectStats,
@@ -90,11 +90,36 @@ import { TagList } from "./components/TaskBrowseComponents";
 import { TodayPage } from "./components/TodayComponents";
 import { WeeklyReviewPage } from "./components/WeeklyReviewComponents";
 import { calculateWeeklyStats, getCompletedTasksForWeek, getCurrentWeekId, getWeekRange } from "./weeklyUtils";
-import { ReminderCenter, ReminderPermissionCard } from "./components/ReminderComponents";
+import { ReminderCenter } from "./components/ReminderComponents";
 import { calculateNextDueDate, getStatusForNextDueDate, isTaskOverdue, shouldStopRecurrence } from "./recurrenceUtils";
 import { calculateReminderTime, dismissReminder, getDueReminders, markReminderFired, snoozeReminder } from "./reminderUtils";
+import { SettingsPage } from "./components/settings/SettingsPage";
+import { PrivacyPage, PublicLegalShell, TermsPage } from "./pages/LegalPages";
+import {
+  countBackupData,
+  downloadBackup,
+  prepareImportedDoc,
+  serializeForBackup,
+  toBackupArray,
+  validateBackup,
+  type ImportPreviewState,
+  type LifeOSBackup,
+} from "./utils/backupUtils";
 
-type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "insights" | "habits" | "weekly-review" | "settings";
+type PageId =
+  | "dashboard"
+  | "inbox"
+  | "today"
+  | "upcoming"
+  | "projects"
+  | "saved-views"
+  | "focus"
+  | "insights"
+  | "habits"
+  | "weekly-review"
+  | "settings"
+  | "privacy"
+  | "terms";
 
 type NavItem = {
   id: PageId;
@@ -120,6 +145,11 @@ type HabitEditorState = {
   habit: Habit | null;
 };
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "inbox", label: "Inbox", icon: Inbox },
@@ -137,6 +167,7 @@ const navItems: NavItem[] = [
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [publicPage, setPublicPage] = useState<PageId>(() => getPageFromHash());
 
   useEffect(() => {
     return onAuthStateChanged(auth, (nextUser) => {
@@ -145,11 +176,21 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const handleHashChange = () => setPublicPage(getPageFromHash());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
   if (authLoading) {
     return <FullScreenState title="Loading LifeOS" message="Checking your secure session." />;
   }
 
   if (!user) {
+    if (publicPage === "privacy" || publicPage === "terms") {
+      return <PublicLegalShell page={publicPage} />;
+    }
+
     return <AuthScreen />;
   }
 
@@ -175,6 +216,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() =>
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported"
   );
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installStatus, setInstallStatus] = useState("");
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupStatus, setBackupStatus] = useState("");
+  const [importPreview, setImportPreview] = useState<ImportPreviewState>({ fileName: "", backup: null, counts: null, error: "", status: "" });
   const [reminderNow, setReminderNow] = useState(() => new Date());
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -213,6 +259,17 @@ function ProtectedLifeOS({ user }: { user: User }) {
   useEffect(() => {
     const timer = window.setInterval(() => setReminderNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    function handleBeforeInstallPrompt(event: Event) {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+      setInstallStatus("LifeOS can be installed from this browser.");
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   }, []);
 
   useEffect(() => {
@@ -261,7 +318,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
       upcoming: upcomingTasks.length,
       projects: projects.filter((project) => project.status === "active" || project.status === "paused").length,
       "saved-views": savedFilters.length,
-      focus: hasActiveFocusSession ? "•" : todayCompletedFocusSessions,
+      focus: hasActiveFocusSession ? "live" : todayCompletedFocusSessions,
       habits: incompleteHabitsToday,
       "weekly-review": weeklyReview.completedAt ? "" : "!",
       insights: dueReminders.length,
@@ -353,7 +410,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const isDailyQuoteFavorite = favoriteQuotes.some((favorite) => favorite.quoteId === dailyQuote.id);
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
   const nextTask = openTasks.find((task) => task.priority === "urgent" || task.priority === "high") ?? todayTasks[0] ?? openTasks[0] ?? null;
-  const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? "Dashboard";
+  const pageTitle = getPageLabel(activePage);
   const defaultCreateStatus: TaskStatus = activePage === "today" || activePage === "upcoming" || activePage === "inbox" ? activePage : "inbox";
 
   const visibleTasks = useMemo(() => {
@@ -376,6 +433,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }, [activePage, taskFilters, tasks, todayDateId]);
 
   async function createTaskFromQuick(rawInput: string, defaultStatus: TaskStatus) {
+    assertOnline();
     const parsed = parseQuickCapture(rawInput, selectableProjects);
     if (!parsed.title) {
       throw new Error("Add a task title before saving.");
@@ -430,6 +488,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function saveTask(values: TaskFormValues, task: Task | null) {
+    assertOnline();
     const payload = normalizeTaskForm(values);
     if (!payload.title) {
       throw new Error("Task title is required.");
@@ -465,6 +524,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function updateTask(task: Task, updates: Record<string, unknown>) {
+    assertOnline();
     await updateDoc(doc(db, "users", user.uid, "tasks", task.id), {
       ...updates,
       updatedAt: serverTimestamp(),
@@ -532,17 +592,20 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   function requestConfirmation(dialog: ConfirmDialogState) {
+    setActionError("");
     setConfirmDialog(dialog);
   }
 
-  async function handleConfirmDialog() {
+  async function handleConfirmDialog(password?: string) {
     if (!confirmDialog) {
       return;
     }
 
     setConfirmBusy(true);
     try {
-      await confirmDialog.onConfirm();
+      assertOnline();
+      setActionError("");
+      await confirmDialog.onConfirm(password);
       setConfirmDialog(null);
     } catch (error) {
       setActionError(getFriendlyError(error));
@@ -569,6 +632,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function saveDailyPlanPatch(updates: Partial<Pick<DailyPlan, "topTaskIds" | "deepWorkTaskId" | "timeBlocks" | "reflection">>) {
+    assertOnline();
     await setDoc(
       doc(db, "users", user.uid, "dailyPlans", todayDateId),
       {
@@ -660,6 +724,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function startFocusSession(values: { taskId: string; mode: FocusMode; plannedMinutes: number; notes: string }) {
+    assertOnline();
     const activeSession = focusSessions.find((session) => session.status === "running" || session.status === "paused");
     if (activeSession) {
       throw new Error("Finish, cancel, or complete the current focus session before starting another.");
@@ -771,6 +836,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function saveFocusSessionNotes(session: FocusSession, notes: string) {
+    assertOnline();
     await updateDoc(doc(db, "users", user.uid, "focusSessions", session.id), {
       notes: notes.trim(),
       updatedAt: serverTimestamp(),
@@ -784,6 +850,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function saveProject(values: ProjectFormValues, project: Project | null) {
+    assertOnline();
     const cleanName = values.name.trim();
     if (!cleanName) {
       throw new Error("Project name is required.");
@@ -828,6 +895,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function createStarterProjects() {
+    assertOnline();
     if (projects.length > 0) {
       setActionMessage("Starter projects are only offered when you have zero projects.");
       return;
@@ -860,6 +928,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function updateProject(project: Project, updates: Record<string, unknown>) {
+    assertOnline();
     await updateDoc(doc(db, "users", user.uid, "projects", project.id), {
       ...updates,
       id: project.id,
@@ -919,6 +988,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function saveSavedFilter(values: SavedFilterFormValues, filter: SavedFilter | null) {
+    assertOnline();
     const cleanName = values.name.trim();
     if (!cleanName) {
       throw new Error("Saved view name is required.");
@@ -983,6 +1053,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   async function saveHabit(values: HabitFormValues, habit: Habit | null) {
+    assertOnline();
     const payload = normalizeHabitForm(values);
     if (!payload.name) {
       throw new Error("Habit name is required.");
@@ -1115,6 +1186,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
   async function runAction(action: () => Promise<void>, successMessage: string) {
     try {
+      assertOnline();
       setActionError("");
       setActionMessage("");
       await action();
@@ -1122,6 +1194,319 @@ function ProtectedLifeOS({ user }: { user: User }) {
     } catch (error) {
       setActionError(getFriendlyError(error));
     }
+  }
+
+  function assertOnline() {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("You are offline. Saving changes requires connection.");
+    }
+  }
+
+  async function installLifeOS() {
+    if (!installPrompt) {
+      setInstallStatus("Use your browser menu to install LifeOS or add it to your home screen.");
+      return;
+    }
+
+    const showInstallPrompt = installPrompt.prompt.bind(installPrompt);
+    await showInstallPrompt();
+    const choice = await installPrompt.userChoice;
+    setInstallPrompt(null);
+    setInstallStatus(choice.outcome === "accepted" ? "LifeOS install started." : "Install dismissed. You can try again later from Settings.");
+  }
+
+  async function exportLifeOSData() {
+    assertOnline();
+    setBackupBusy(true);
+    setBackupStatus("");
+    try {
+      const [weeklySnapshot, settingsSnapshot] = await Promise.all([
+        getDocs(collection(db, "users", user.uid, "weeklyReviews")),
+        getDoc(doc(db, "users", user.uid, "settings", "main")),
+      ]);
+      const backup: LifeOSBackup = {
+        exportVersion: 1,
+        appVersion: "0.1.0",
+        exportedAt: getNowISOString(),
+        data: {
+          tasks: toBackupArray(tasks),
+          projects: toBackupArray(projects),
+          filters: toBackupArray(savedFilters),
+          dailyPlans: toBackupArray(dailyPlans),
+          focusSessions: toBackupArray(focusSessions),
+          favoriteQuotes: toBackupArray(favoriteQuotes),
+          habits: habits.map((habit) => serializeForBackup(habit) as Record<string, unknown> & { completions?: Array<Record<string, unknown>> }),
+          weeklyReviews: weeklySnapshot.docs.map((snapshot) => serializeForBackup({ id: snapshot.id, ...snapshot.data() }) as Record<string, unknown>),
+          settings: settingsSnapshot.exists() ? (serializeForBackup(settingsSnapshot.data()) as Record<string, unknown>) : null,
+        },
+      };
+
+      downloadBackup(backup);
+      setBackupStatus("Backup exported.");
+    } catch (error) {
+      setBackupStatus(getFriendlyError(error));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function readBackupFile(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const backup = validateBackup(parsed);
+      const counts = countBackupData(backup);
+      setImportPreview({ fileName: file.name, backup, counts, error: "", status: "" });
+    } catch (error) {
+      setImportPreview({ fileName: file.name, backup: null, counts: null, error: getFriendlyError(error), status: "" });
+    }
+  }
+
+  function confirmImportBackup() {
+    if (!importPreview.backup) {
+      setImportPreview((current) => ({ ...current, error: "Choose a valid LifeOS backup file first." }));
+      return;
+    }
+
+    requestConfirmation({
+      title: "Import backup",
+      description: "Import this backup into your current LifeOS account? Merge import skips documents when the same ID already exists.",
+      confirmLabel: "Import backup",
+      cancelLabel: "Cancel",
+      variant: "normal",
+      onConfirm: () => importBackupData(importPreview.backup as LifeOSBackup),
+    });
+  }
+
+  async function importBackupData(backup: LifeOSBackup) {
+    assertOnline();
+    setBackupBusy(true);
+    setImportPreview((current) => ({ ...current, status: "Importing backup...", error: "" }));
+    try {
+      await importCollection("tasks", backup.data.tasks);
+      await importCollection("projects", backup.data.projects);
+      await importCollection("filters", backup.data.filters);
+      await importCollection("dailyPlans", backup.data.dailyPlans, (item) => String(item.id ?? item.date ?? ""));
+      await importCollection("focusSessions", backup.data.focusSessions);
+      await importCollection("favoriteQuotes", backup.data.favoriteQuotes);
+      await importCollection("weeklyReviews", backup.data.weeklyReviews, (item) => String(item.id ?? item.weekId ?? ""));
+      await importHabits(backup.data.habits);
+      if (backup.data.settings) {
+        await setDoc(doc(db, "users", user.uid, "settings", "main"), { ...backup.data.settings, userId: user.uid }, { merge: true });
+      }
+      setImportPreview((current) => ({ ...current, status: "Backup imported. Existing documents with matching IDs were skipped.", error: "" }));
+      setActionMessage("Backup import finished.");
+    } catch (error) {
+      setImportPreview((current) => ({ ...current, error: getFriendlyError(error), status: "" }));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function importCollection(collectionName: string, docsToImport: Array<Record<string, unknown>>, idResolver = (item: Record<string, unknown>) => String(item.id ?? "")) {
+    const existingIds = new Set((await getDocs(collection(db, "users", user.uid, collectionName))).docs.map((snapshot) => snapshot.id));
+    let batch = writeBatch(db);
+    let writes = 0;
+
+    const commitBatch = async () => {
+      if (writes > 0) {
+        await batch.commit();
+        batch = writeBatch(db);
+        writes = 0;
+      }
+    };
+
+    for (const item of docsToImport) {
+      const id = idResolver(item) || createLocalId();
+      if (existingIds.has(id)) {
+        continue;
+      }
+      batch.set(doc(db, "users", user.uid, collectionName, id), prepareImportedDoc(item, id, user.uid));
+      writes += 1;
+      if (writes >= 450) {
+        await commitBatch();
+      }
+    }
+
+    await commitBatch();
+  }
+
+  async function importHabits(habitsToImport: LifeOSBackup["data"]["habits"]) {
+    const existingIds = new Set((await getDocs(collection(db, "users", user.uid, "habits"))).docs.map((snapshot) => snapshot.id));
+    let batch = writeBatch(db);
+    let writes = 0;
+
+    const commitBatch = async () => {
+      if (writes > 0) {
+        await batch.commit();
+        batch = writeBatch(db);
+        writes = 0;
+      }
+    };
+
+    for (const habit of habitsToImport) {
+      const id = String(habit.id ?? "");
+      if (!id || existingIds.has(id)) {
+        continue;
+      }
+
+      const { completions, ...habitData } = habit;
+      batch.set(doc(db, "users", user.uid, "habits", id), prepareImportedDoc(habitData, id, user.uid));
+      writes += 1;
+      if (writes >= 450) {
+        await commitBatch();
+      }
+
+      for (const completion of Array.isArray(completions) ? completions : []) {
+        const completionId = String(completion.id ?? completion.date ?? "");
+        if (!completionId) {
+          continue;
+        }
+        batch.set(doc(db, "users", user.uid, "habits", id, "completions", completionId), {
+          ...prepareImportedDoc(completion, completionId, user.uid),
+          habitId: id,
+          date: String(completion.date ?? completionId),
+        });
+        writes += 1;
+        if (writes >= 450) {
+          await commitBatch();
+        }
+      }
+    }
+
+    await commitBatch();
+  }
+
+  function confirmDeleteAppData() {
+    requestConfirmation({
+      title: "Delete all LifeOS data",
+      description: "This deletes tasks, projects, views, daily plans, focus sessions, favorite quotes, habits, weekly reviews, and settings for this signed-in account. Your Firebase Auth account stays active.",
+      confirmLabel: "Delete app data",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      requiredPhrase: "DELETE",
+      onConfirm: () => deleteAllLifeOSData(),
+    });
+  }
+
+  function confirmDeleteAccount() {
+    const usesPasswordProvider = isEmailPasswordUser(user);
+    requestConfirmation({
+      title: "Delete account",
+      description: usesPasswordProvider
+        ? "This deletes your LifeOS app data and your Firebase Auth account. Re-enter your password so Firebase can confirm this destructive action before any app data is deleted."
+        : "This deletes your LifeOS app data and your Firebase Auth account. If Firebase requires recent login, log out and log in again with your provider before retrying.",
+      confirmLabel: "Delete account",
+      cancelLabel: "Cancel",
+      variant: "destructive",
+      requiredPhrase: "DELETE ACCOUNT",
+      passwordRequired: usesPasswordProvider,
+      passwordLabel: "Confirm password",
+      passwordPlaceholder: "Your LifeOS password",
+      onConfirm: (password) => deleteAccountSafely(password),
+    });
+  }
+
+  async function deleteAccountSafely(password?: string) {
+    assertOnline();
+    const currentUser = auth.currentUser;
+    if (!currentUser || currentUser.uid !== user.uid) {
+      throw new Error("No active authenticated user was found. Log in again, then retry account deletion.");
+    }
+
+    const usesPasswordProvider = isEmailPasswordUser(currentUser);
+    if (usesPasswordProvider) {
+      const email = currentUser.email ?? user.email;
+      if (!email) {
+        throw new Error("This account does not have an email address available for reauthentication.");
+      }
+      if (!password) {
+        throw new Error("Enter your password to confirm account deletion.");
+      }
+
+      try {
+        await reauthenticateWithCredential(currentUser, EmailAuthProvider.credential(email, password));
+      } catch (error) {
+        if (isFirebaseErrorCode(error, "auth/invalid-credential") || isFirebaseErrorCode(error, "auth/wrong-password")) {
+          throw new Error("That password was not accepted. Check it and try again.");
+        }
+        throw error;
+      }
+    } else {
+      throw new Error("Delete account currently supports LifeOS email/password accounts. For provider-based accounts, log out and sign in again, then delete app data separately if needed.");
+    }
+
+    try {
+      await deleteAllLifeOSData(false);
+    } catch (error) {
+      throw new Error(`Account deletion stopped because app data could not be deleted: ${getFriendlyError(error)}`);
+    }
+
+    try {
+      await deleteUser(currentUser);
+      setActionMessage("LifeOS account deleted.");
+    } catch (error) {
+      if (isFirebaseErrorCode(error, "auth/requires-recent-login")) {
+        throw new Error("App data was deleted, but Firebase still requires a fresh login before deleting the Auth account. Log in again, then retry account deletion.");
+      }
+      throw new Error(`App data was deleted, but the Auth account could not be deleted: ${getFriendlyError(error)}`);
+    }
+  }
+
+  async function deleteAllLifeOSData(showMessage = true) {
+    assertOnline();
+    setBackupBusy(true);
+    try {
+      await deleteUserCollections();
+      await deleteDoc(doc(db, "users", user.uid));
+      if (showMessage) {
+        setActionMessage("LifeOS app data deleted.");
+      }
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function deleteUserCollections() {
+    let batch = writeBatch(db);
+    let writes = 0;
+
+    const commitBatch = async () => {
+      if (writes > 0) {
+        await batch.commit();
+        batch = writeBatch(db);
+        writes = 0;
+      }
+    };
+
+    const deleteRef = async (pathDoc: ReturnType<typeof doc>) => {
+      batch.delete(pathDoc);
+      writes += 1;
+      if (writes >= 450) {
+        await commitBatch();
+      }
+    };
+
+    const habitSnapshot = await getDocs(collection(db, "users", user.uid, "habits"));
+    for (const habitDoc of habitSnapshot.docs) {
+      const completionSnapshot = await getDocs(collection(db, "users", user.uid, "habits", habitDoc.id, "completions"));
+      for (const completionDoc of completionSnapshot.docs) {
+        await deleteRef(completionDoc.ref);
+      }
+      await deleteRef(habitDoc.ref);
+    }
+
+    for (const collectionName of ["tasks", "projects", "filters", "dailyPlans", "focusSessions", "favoriteQuotes", "weeklyReviews", "settings", "recurringTasks"]) {
+      const snapshot = await getDocs(collection(db, "users", user.uid, collectionName));
+      for (const item of snapshot.docs) {
+        await deleteRef(item.ref);
+      }
+    }
+
+    await commitBatch();
   }
 
   async function saveWeeklyReview(reviewDraft: WeeklyReview, completedAt = reviewDraft.completedAt) {
@@ -1237,7 +1622,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
               <Plus size={18} />
               New habit
             </button>
-          ) : (
+          ) : activePage === "privacy" || activePage === "terms" ? null : (
             <button
               className="primary-button"
               type="button"
@@ -1524,8 +1909,23 @@ function ProtectedLifeOS({ user }: { user: User }) {
             tagCount={tagCounts.length}
             notificationPermission={notificationPermission}
             onEnableNotifications={requestReminderNotifications}
+            installAvailable={Boolean(installPrompt)}
+            installStatus={installStatus}
+            onInstall={installLifeOS}
+            backupBusy={backupBusy}
+            backupStatus={backupStatus}
+            importPreview={importPreview}
+            onExportData={exportLifeOSData}
+            onImportFile={readBackupFile}
+            onConfirmImport={confirmImportBackup}
+            onClearImport={() => setImportPreview({ fileName: "", backup: null, counts: null, error: "", status: "" })}
+            onDeleteAppData={confirmDeleteAppData}
+            onDeleteAccount={confirmDeleteAccount}
           />
         ) : null}
+
+        {activePage === "privacy" ? <PrivacyPage /> : null}
+        {activePage === "terms" ? <TermsPage /> : null}
 
         {activePage !== "projects" &&
         activePage !== "saved-views" &&
@@ -1533,7 +1933,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
         activePage !== "focus" &&
         activePage !== "insights" &&
         activePage !== "habits" &&
-        activePage !== "weekly-review" ? (
+        activePage !== "weekly-review" &&
+        activePage !== "privacy" &&
+        activePage !== "terms" ? (
           <TaskSection
             loading={taskState.loading}
             page={activePage}
@@ -1597,7 +1999,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
       ) : null}
 
       {confirmDialog ? (
-        <ConfirmDialog dialog={confirmDialog} busy={confirmBusy} onCancel={closeConfirmDialog} onConfirm={() => void handleConfirmDialog()} />
+        <ConfirmDialog dialog={confirmDialog} busy={confirmBusy} errorMessage={actionError} onCancel={closeConfirmDialog} onConfirm={(password) => void handleConfirmDialog(password)} />
       ) : null}
     </main>
   );
@@ -1972,90 +2374,6 @@ function PagePanel({ title, description, children }: { title: string; descriptio
   );
 }
 
-function SettingsPage({
-  user,
-  tasks,
-  projects,
-  savedFilters,
-  tagCount,
-  notificationPermission,
-  onEnableNotifications,
-}: {
-  user: User;
-  tasks: Task[];
-  projects: Project[];
-  savedFilters: SavedFilter[];
-  tagCount: number;
-  notificationPermission: NotificationPermission | "unsupported";
-  onEnableNotifications: () => Promise<void>;
-}) {
-  const openCount = tasks.filter((task) => !["done", "archived"].includes(task.status)).length;
-  const activeProjectCount = projects.filter((project) => project.status === "active" || project.status === "paused").length;
-  const configuredCount = firebaseEnvStatus.filter((item) => item.configured).length;
-
-  return (
-    <section className="content-grid settings-grid">
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Account</p>
-            <h3>Signed-in profile</h3>
-          </div>
-          <ShieldCheck size={20} />
-        </div>
-        <dl className="settings-list">
-          <div>
-            <dt>Email</dt>
-            <dd>{user.email}</dd>
-          </div>
-          <div>
-            <dt>User ID</dt>
-            <dd>{user.uid}</dd>
-          </div>
-          <div>
-            <dt>Open tasks</dt>
-            <dd>{openCount}</dd>
-          </div>
-          <div>
-            <dt>Active projects</dt>
-            <dd>{activeProjectCount}</dd>
-          </div>
-          <div>
-            <dt>Saved views</dt>
-            <dd>{savedFilters.length}</dd>
-          </div>
-          <div>
-            <dt>Tags</dt>
-            <dd>{tagCount}</dd>
-          </div>
-        </dl>
-      </article>
-
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Firebase</p>
-            <h3>Environment</h3>
-          </div>
-          <Sparkles size={20} />
-        </div>
-        <p className="panel-copy">
-          {configuredCount} of {firebaseEnvStatus.length} Firebase variables are present in the Vite environment.
-        </p>
-        <div className="env-list">
-          {firebaseEnvStatus.map((item) => (
-            <span className={item.configured ? "configured" : ""} key={item.key}>
-              {item.key}
-            </span>
-          ))}
-        </div>
-      </article>
-
-      <ReminderPermissionCard permission={notificationPermission} onEnable={onEnableNotifications} />
-    </section>
-  );
-}
-
 function normalizeTaskForm(values: TaskFormValues) {
   const repeatFrequency = values.repeatEnabled ? values.repeatFrequency : "none";
   const repeatCount = values.repeatEndType === "afterCount" ? Math.max(1, Number(values.repeatCount || 1)) : null;
@@ -2145,9 +2463,30 @@ function getNavBadge(value: number | string | undefined) {
   return value ?? "";
 }
 
+function isFirebaseErrorCode(error: unknown, code: string) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === code;
+}
+
+function isEmailPasswordUser(user: User) {
+  return Boolean(user.email) && (user.providerData.length === 0 || user.providerData.some((provider) => provider.providerId === "password"));
+}
+
 function getPageFromHash(): PageId {
   const hash = window.location.hash.replace("#", "");
+  if (hash === "privacy" || hash === "terms") {
+    return hash;
+  }
   return navItems.some((item) => item.id === hash) ? (hash as PageId) : "dashboard";
+}
+
+function getPageLabel(page: PageId) {
+  if (page === "privacy") {
+    return "Privacy";
+  }
+  if (page === "terms") {
+    return "Terms";
+  }
+  return navItems.find((item) => item.id === page)?.label ?? "Dashboard";
 }
 
 function getPageHeadline(page: PageId) {
@@ -2173,7 +2512,11 @@ function getPageHeadline(page: PageId) {
     case "weekly-review":
       return "Reflect on the week, review patterns, and choose next-week priorities.";
     case "settings":
-      return "Confirm account, Firebase, and archived task state.";
+      return "Install, back up, restore, export, and review account safety.";
+    case "privacy":
+      return "How LifeOS stores and handles your personal workspace data.";
+    case "terms":
+      return "Simple terms for using LifeOS as a personal productivity app.";
   }
 }
 
