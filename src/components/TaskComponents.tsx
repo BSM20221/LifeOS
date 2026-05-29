@@ -1,5 +1,5 @@
 import { Archive, CalendarClock, Check, CheckCircle2, Clock3, Pencil, Plus, Save, Trash2, X } from "lucide-react";
-import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { energyLevels, priorities, taskStatuses } from "../constants";
 import type { EnergyLevel, FilterCriteria, Project, TagCount, Task, TaskFormValues, TaskPriority, TaskStatus } from "../types";
 import { getFriendlyError, titleCase } from "../utils";
@@ -272,8 +272,8 @@ export function TaskEditor({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
-        <div className="panel-heading">
+      <section className="modal-panel task-modal-panel" role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
+        <div className="panel-heading task-modal-heading">
           <div>
             <p className="eyebrow">{task ? "Edit task" : "Create task"}</p>
             <h3 id="task-editor-title">{task ? task.title : "New task"}</h3>
@@ -283,79 +283,91 @@ export function TaskEditor({
           </button>
         </div>
 
-        <form className="task-form" onSubmit={handleSubmit}>
-          <label>
-            Title
-            <input required value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} />
-          </label>
-
-          <label>
-            Description
-            <textarea value={values.description} onChange={(event) => setValues({ ...values, description: event.target.value })} />
-          </label>
-
-          <div className="form-grid">
-            <EmojiPicker label="Task emoji" value={values.emoji} onChange={(emoji) => setValues({ ...values, emoji })} />
+        <form className="task-form task-modal-form" onSubmit={handleSubmit}>
+          <TaskFormSection title="Main task">
+            <div className="task-title-grid">
+              <label className="task-title-field">
+                Title
+                <input required value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} />
+              </label>
+              <EmojiPicker label="Task emoji" value={values.emoji} onChange={(emoji) => setValues({ ...values, emoji })} />
+            </div>
 
             <label>
-              Status
-              <select value={values.status} onChange={(event) => setValues({ ...values, status: event.target.value as TaskStatus })}>
-                {taskStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {titleCase(status)}
-                  </option>
-                ))}
-              </select>
+              Description
+              <textarea value={values.description} onChange={(event) => setValues({ ...values, description: event.target.value })} />
             </label>
 
             <label>
-              Priority
-              <select value={values.priority} onChange={(event) => setValues({ ...values, priority: event.target.value as TaskPriority })}>
-                {priorities.map((priority) => (
-                  <option key={priority} value={priority}>
-                    {titleCase(priority)}
-                  </option>
-                ))}
-              </select>
+              Notes
+              <textarea value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} />
             </label>
+          </TaskFormSection>
 
-            <ProjectSelector
-              projects={projects}
-              currentProjectId={task?.projectId ?? defaultProjectId}
-              value={values.projectId}
-              onChange={(projectId) => setValues({ ...values, projectId })}
-            />
-
-            <DueDateTimeFields
-              dueDate={values.dueDate}
-              dueTime={values.dueTime}
-              onChange={({ dueDate, dueTime }) => setValues({ ...values, dueDate, dueTime })}
-            />
-
-            <label>
-              Estimate
-              <input
-                min="0"
-                type="number"
-                value={values.estimatedMinutes}
-                onChange={(event) => setValues({ ...values, estimatedMinutes: event.target.value })}
+          <TaskFormSection title="Planning">
+            <div className="form-grid task-planning-grid">
+              <ProjectSelector
+                projects={projects}
+                currentProjectId={task?.projectId ?? defaultProjectId}
+                value={values.projectId}
+                onChange={(projectId) => setValues({ ...values, projectId })}
               />
-            </label>
 
-            <label>
-              Energy
-              <select
-                value={values.energyLevel}
-                onChange={(event) => setValues({ ...values, energyLevel: event.target.value as EnergyLevel })}
-              >
-                {energyLevels.map((energy) => (
-                  <option key={energy} value={energy}>
-                    {titleCase(energy)}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <label>
+                Status
+                <select value={values.status} onChange={(event) => setValues({ ...values, status: event.target.value as TaskStatus })}>
+                  {taskStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {titleCase(status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
+              <label>
+                Priority
+                <select value={values.priority} onChange={(event) => setValues({ ...values, priority: event.target.value as TaskPriority })}>
+                  {priorities.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {titleCase(priority)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <DueDateTimeFields
+                dueDate={values.dueDate}
+                dueTime={values.dueTime}
+                onChange={({ dueDate, dueTime }) => setValues({ ...values, dueDate, dueTime })}
+              />
+
+              <label>
+                Estimate
+                <input
+                  min="0"
+                  type="number"
+                  value={values.estimatedMinutes}
+                  onChange={(event) => setValues({ ...values, estimatedMinutes: event.target.value })}
+                />
+              </label>
+
+              <label>
+                Energy
+                <select
+                  value={values.energyLevel}
+                  onChange={(event) => setValues({ ...values, energyLevel: event.target.value as EnergyLevel })}
+                >
+                  {energyLevels.map((energy) => (
+                    <option key={energy} value={energy}>
+                      {titleCase(energy)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </TaskFormSection>
+
+          <TaskFormSection title="Organization">
             <label>
               Tags
               <input
@@ -364,19 +376,15 @@ export function TaskEditor({
                 placeholder="work, health"
               />
             </label>
-          </div>
-
-          <label>
-            Notes
-            <textarea value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} />
-          </label>
+          </TaskFormSection>
 
           <RecurrenceEditor values={values} onChange={setValues} />
+
           <ReminderEditor values={values} onChange={setValues} />
 
           {error ? <StatusBanner tone="error" message={error} /> : null}
 
-          <div className="modal-actions">
+          <div className="modal-actions task-modal-actions">
             <button className="secondary-button" type="button" onClick={onClose}>
               Cancel
             </button>
@@ -388,6 +396,15 @@ export function TaskEditor({
         </form>
       </section>
     </div>
+  );
+}
+
+function TaskFormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="task-form-section">
+      <h4>{title}</h4>
+      <div className="task-form-section-body">{children}</div>
+    </section>
   );
 }
 

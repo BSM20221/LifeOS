@@ -72,6 +72,16 @@ textarea {
   font: inherit;
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  width: auto;
+}
+
 button {
   cursor: pointer;
 }
@@ -389,7 +399,7 @@ h1 {
 
 .quick-add input,
 .auth-form input,
-.task-form input,
+.task-form input:not([type="checkbox"]):not([type="radio"]),
 .task-form select,
 .task-form textarea {
   width: 100%;
@@ -410,7 +420,7 @@ h1 {
 
 .quick-add input:focus,
 .auth-form input:focus,
-.task-form input:focus,
+.task-form input:not([type="checkbox"]):not([type="radio"]):focus,
 .task-form select:focus,
 .task-form textarea:focus {
   border-color: #387055;
@@ -3438,7 +3448,7 @@ button.tag-chip:hover {
 
 .quick-add input,
 .auth-form input,
-.task-form input,
+.task-form input:not([type="checkbox"]):not([type="radio"]),
 .task-form select,
 .task-form textarea,
 .compact-select select,
@@ -3461,7 +3471,7 @@ button.tag-chip:hover {
 
 .quick-add input,
 .auth-form input,
-.task-form input,
+.task-form input:not([type="checkbox"]):not([type="radio"]),
 .task-form select,
 .compact-select select,
 .inline-planner-control select,
@@ -3476,7 +3486,7 @@ button.tag-chip:hover {
 
 .quick-add input:focus,
 .auth-form input:focus,
-.task-form input:focus,
+.task-form input:not([type="checkbox"]):not([type="radio"]):focus,
 .task-form select:focus,
 .task-form textarea:focus,
 .compact-select select:focus,
@@ -5630,7 +5640,7 @@ textarea:focus-visible {
 
 .compact-select select,
 .search-field input,
-.task-form input,
+.task-form input:not([type="checkbox"]):not([type="radio"]),
 .task-form select,
 .task-form textarea,
 .weekly-field input,
@@ -6185,22 +6195,83 @@ textarea:focus-visible {
   }
 }
 
-/* Recurring tasks and reminders */
-.modal-panel .task-form {
+/* Task modal / form polish */
+.task-modal-panel {
+  max-height: min(92vh, 900px);
+  padding: 18px;
+  width: min(780px, calc(100vw - 28px));
+}
+
+.task-modal-heading {
+  align-items: center;
+  border-bottom: 1px solid rgba(22, 32, 29, 0.08);
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+}
+
+.task-modal-heading h3 {
+  font-size: clamp(1.1rem, 2vw, 1.42rem);
+}
+
+.task-modal-form {
   gap: 12px;
 }
 
-.modal-panel .task-form > label {
-  gap: 6px;
+.task-modal-form textarea {
+  min-height: 70px;
 }
 
-.modal-panel .task-form textarea {
-  min-height: 74px;
-}
-
-.modal-panel .form-grid {
+.task-form-section {
+  background: rgba(248, 250, 252, 0.74);
+  border: 1px solid rgba(22, 32, 29, 0.1);
+  border-radius: var(--radius-lg);
+  display: grid;
   gap: 10px;
+  min-width: 0;
+  padding: 12px;
 }
+
+.task-form-section h4 {
+  color: var(--color-text-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.task-form-section-body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.task-title-grid {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.38fr);
+}
+
+.task-title-field {
+  min-width: 0;
+}
+
+.task-planning-grid {
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.task-modal-actions {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--color-surface) 28%);
+  bottom: -18px;
+  margin: 0 -2px -18px;
+  padding: 18px 2px 4px;
+  position: sticky;
+  z-index: 3;
+}
+
+/* Recurring tasks and reminders */
 
 .due-date-time-fields {
   border: 1px solid var(--color-border);
@@ -6268,6 +6339,10 @@ textarea:focus-visible {
   display: flex;
   gap: 10px;
   min-width: 0;
+}
+
+.task-advanced-header > svg {
+  flex: 0 0 auto;
 }
 
 .compact-settings-header {
@@ -6412,12 +6487,13 @@ textarea:focus-visible {
 
 .compact-reminder-composer {
   align-items: end;
-  grid-template-columns: minmax(180px, 1fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .compact-reminder-composer .secondary-button {
   align-self: end;
   gap: 7px;
+  justify-self: start;
   min-height: 40px;
   min-width: 0;
   padding: 0 13px;
@@ -6551,6 +6627,27 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .task-modal-panel {
+    max-height: min(94vh, 900px);
+    padding: 14px;
+    width: min(100%, calc(100vw - 18px));
+  }
+
+  .task-title-grid,
+  .task-planning-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-modal-actions {
+    bottom: -14px;
+    margin-bottom: -14px;
+  }
+
+  .task-modal-actions .primary-button,
+  .task-modal-actions .secondary-button {
+    flex: 1 1 150px;
+  }
+
   .due-date-time-fields,
   .recurrence-grid,
   .reminder-add-grid {
