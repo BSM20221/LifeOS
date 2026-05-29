@@ -6165,3 +6165,177 @@ textarea:focus-visible {
     white-space: normal;
   }
 }
+
+/* Recurring tasks and reminders */
+.task-advanced-section {
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+}
+
+.task-advanced-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.task-advanced-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.task-advanced-header strong {
+  color: var(--color-text-strong);
+}
+
+.task-advanced-header span,
+.field-hint {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.inline-check {
+  align-items: center;
+  display: inline-flex;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.inline-check input {
+  min-height: auto;
+}
+
+.recurrence-grid,
+.reminder-add-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.weekday-picker {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+  margin: 0;
+  min-width: 0;
+  padding: 10px;
+}
+
+.weekday-picker legend {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 0 4px;
+}
+
+.weekday-picker label {
+  align-items: center;
+  display: inline-flex;
+  flex-direction: row;
+  gap: 5px;
+  min-height: 28px;
+}
+
+.reminder-list,
+.reminder-center-list {
+  display: grid;
+  gap: 8px;
+}
+
+.reminder-editor-row,
+.reminder-center-item {
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.reminder-chip,
+.recurrence-chip {
+  align-items: center;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-muted);
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 850;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.recurrence-chip {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.reminder-center {
+  border-color: rgba(37, 99, 235, 0.2);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.08);
+}
+
+.reminder-center-item > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.reminder-center-item strong {
+  color: var(--color-text-strong);
+}
+
+.reminder-center-item span {
+  color: var(--color-muted);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.reminder-center-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.reminder-permission-card {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .recurrence-grid,
+  .reminder-add-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reminder-editor-row,
+  .reminder-center-item {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .reminder-center-actions {
+    justify-content: flex-start;
+  }
+}

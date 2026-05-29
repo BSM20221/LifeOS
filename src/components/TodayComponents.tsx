@@ -22,6 +22,8 @@ import { EmptyState, StatusBanner } from "./Common";
 import { InsightMessageList } from "./InsightsComponents";
 import { QuickCapture } from "./TaskComponents";
 import { TagChip } from "./TaskBrowseComponents";
+import { RecurrenceSummary, ReminderBadge } from "./ReminderComponents";
+import { sortTasksByDueDateTime } from "../recurrenceUtils";
 
 export function TodayPage({
   dateId,
@@ -689,7 +691,7 @@ function TodayTaskList({
       </div>
       {tasks.length === 0 ? <EmptyState title={emptyMessage} message="Use task actions or quick capture to adjust today's list." /> : null}
       <div className="today-task-list">
-        {tasks.map((task) => (
+        {sortTasksByDueDateTime(tasks).map((task) => (
           <TaskPriorityCard key={task.id} task={task} project={task.projectId ? projectById.get(task.projectId) ?? null : null}>
             <button className="icon-text-button" type="button" onClick={() => onMarkDone(task)}>
               <Check size={16} />
@@ -735,8 +737,10 @@ function TaskPriorityCard({
             </em>
           ) : null}
           <em className={`priority ${task.priority}`}>{task.priority}</em>
-          {task.dueDate ? <span>Due {task.dueDate}</span> : null}
+          {task.dueDate ? <span>Due {task.dueDate}{task.dueTime ? ` at ${task.dueTime}` : ""}</span> : null}
           <DurationBadge minutes={Number(task.estimatedMinutes || 0)} />
+          <RecurrenceSummary task={task} />
+          <ReminderBadge task={task} />
           {task.tags.map((tag) => (
             <TagChip key={tag} tag={tag} />
           ))}

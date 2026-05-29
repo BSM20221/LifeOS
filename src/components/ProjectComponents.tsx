@@ -6,6 +6,8 @@ import { formatProjectDate, getFriendlyError, titleCase } from "../utils";
 import { EmptyState, ProgressBar, StatusBanner } from "./Common";
 import { EmojiPicker } from "./EmojiPicker";
 import { displayWithEmoji } from "../emojiPresets";
+import { RecurrenceSummary, ReminderBadge } from "./ReminderComponents";
+import { sortTasksByDueDateTime } from "../recurrenceUtils";
 
 type ProjectStatsMap = Record<string, ProjectStats>;
 
@@ -464,10 +466,12 @@ function ProjectTaskList({ title, tasks }: { title: string; tasks: Task[] }) {
     <section className="project-task-list" aria-label={title}>
       <h4>{title}</h4>
       {tasks.length === 0 ? <span className="muted-line">No tasks in this group.</span> : null}
-      {tasks.map((task) => (
+      {sortTasksByDueDateTime(tasks).map((task) => (
         <div className="project-task-mini" key={task.id}>
           <strong>{displayWithEmoji(task.title, task.emoji)}</strong>
-          <span>{task.status}</span>
+          <span>{task.status}{task.dueDate ? ` · ${task.dueDate}${task.dueTime ? ` ${task.dueTime}` : ""}` : ""}</span>
+          <RecurrenceSummary task={task} />
+          <ReminderBadge task={task} />
         </div>
       ))}
     </section>

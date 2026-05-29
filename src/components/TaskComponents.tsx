@@ -8,6 +8,8 @@ import { normalizeTags } from "../filterUtils";
 import { TagChip, TaskFilters } from "./TaskBrowseComponents";
 import { EmojiPicker } from "./EmojiPicker";
 import { displayWithEmoji } from "../emojiPresets";
+import { DueTimeField, RecurrenceEditor, RecurrenceSummary, ReminderBadge, ReminderEditor } from "./ReminderComponents";
+import { sortTasksByDueDateTime } from "../recurrenceUtils";
 
 export function QuickCapture({
   label,
@@ -41,7 +43,7 @@ export function QuickCapture({
         aria-label={label}
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Capture with #tag, !high, +Project"
+        placeholder="Capture with #tag, !high, +Project, today 09:00"
       />
       <button type="submit" aria-label={label} disabled={submitting}>
         <Plus size={18} />
@@ -89,6 +91,7 @@ export function TaskSection({
   onFocus?: (task: Task) => void;
 }) {
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const sortedTasks = useMemo(() => sortTasksByDueDateTime(tasks), [tasks]);
   const title = page === "settings" ? "Archived tasks" : page === "dashboard" ? "Recent tasks" : `${titleCase(page)} tasks`;
   const emptyState = getTaskEmptyState(page, filterCriteria);
 
@@ -107,7 +110,7 @@ export function TaskSection({
       {!loading && tasks.length === 0 ? <EmptyState title={emptyState.title} message={emptyState.message} /> : null}
 
       <div className="task-list">
-        {tasks.map((task) => (
+        {sortedTasks.map((task) => (
           <TaskRow
             key={task.id}
             task={task}
@@ -188,9 +191,11 @@ export function TaskRow({
               {displayWithEmoji(project.name, project.emoji)}
             </em>
           ) : null}
-          {task.dueDate ? <span>Due {task.dueDate}</span> : null}
+          {task.dueDate ? <span>Due {task.dueDate}{task.dueTime ? ` at ${task.dueTime}` : ""}</span> : null}
           <span>{task.estimatedMinutes} min</span>
           <span>{titleCase(task.energyLevel)} energy</span>
+          <RecurrenceSummary task={task} />
+          <ReminderBadge task={task} />
           {task.tags.map((tag) => (
             <TagChip key={tag} tag={tag} onClick={onTagClick} />
           ))}
@@ -326,6 +331,8 @@ export function TaskEditor({
               <input type="date" value={values.dueDate} onChange={(event) => setValues({ ...values, dueDate: event.target.value })} />
             </label>
 
+            <DueTimeField dueDate={values.dueDate} value={values.dueTime} onChange={(dueTime) => setValues({ ...values, dueTime })} />
+
             <label>
               Estimate
               <input
@@ -364,6 +371,9 @@ export function TaskEditor({
             Notes
             <textarea value={values.notes} onChange={(event) => setValues({ ...values, notes: event.target.value })} />
           </label>
+
+          <RecurrenceEditor values={values} onChange={setValues} />
+          <ReminderEditor values={values} onChange={setValues} />
 
           {error ? <StatusBanner tone="error" message={error} /> : null}
 
@@ -426,6 +436,7 @@ function taskToFormValues(task: Task | null, defaultStatus: TaskStatus, defaultP
     status: task?.status ?? defaultStatus,
     priority: task?.priority ?? "medium",
     dueDate: task?.dueDate ?? "",
+    dueTime: task?.dueTime ?? "",
     tags: task?.tags.join(", ") ?? "",
     estimatedMinutes: String(task?.estimatedMinutes ?? 25),
     energyLevel: task?.energyLevel ?? "medium",
@@ -433,6 +444,20 @@ function taskToFormValues(task: Task | null, defaultStatus: TaskStatus, defaultP
     projectId: task?.projectId ?? defaultProjectId ?? "",
     emoji: task?.emoji ?? "",
     icon: task?.icon ?? "",
+    repeatEnabled: task?.repeatEnabled ?? false,
+    repeatFrequency: task?.repeatFrequency ?? "none",
+    repeatInterval: String(task?.repeatInterval ?? 1),
+    repeatDaysOfWeek: task?.repeatDaysOfWeek ?? [],
+    repeatDayOfMonth: task?.repeatDayOfMonth ? String(task.repeatDayOfMonth) : "",
+    repeatEndType: task?.repeatEndType ?? "never",
+    repeatEndDate: task?.repeatEndDate ?? "",
+    repeatCount: task?.repeatCount ? String(task.repeatCount) : "",
+    completedOccurrences: task?.completedOccurrences ?? 0,
+    nextDueDate: task?.nextDueDate ?? task?.dueDate ?? "",
+    lastGeneratedDate: task?.lastGeneratedDate ?? "",
+    recurringParentId: task?.recurringParentId ?? "",
+    isRecurringInstance: task?.isRecurringInstance ?? false,
+    reminders: task?.reminders ?? [],
   };
 }
 

@@ -11,6 +11,12 @@ export type MoodLevel = "low" | "okay" | "good" | "great";
 export type FocusMode = "pomodoro" | "short-break" | "long-break" | "custom";
 export type FocusStatus = "running" | "paused" | "completed" | "cancelled";
 export type HabitFrequency = "daily" | "weekly" | "custom";
+export type RepeatFrequency = "none" | "daily" | "weekly" | "monthly" | "yearly" | "custom";
+export type RepeatEndType = "never" | "onDate" | "afterCount";
+export type RepeatWeekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+export type ReminderType = "at-time" | "before-due" | "custom";
+export type SnoozeOption = "5m" | "10m" | "30m" | "1h" | "tomorrow";
+export type NotificationPermissionState = NotificationPermission | "unsupported";
 export type InsightSeverity = "info" | "success" | "warning" | "danger";
 export type AnalyticsRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
 export type PerformanceStatus = "Strong" | "Healthy" | "Needs attention" | "Neglected" | "Stuck";
@@ -47,6 +53,7 @@ export type Task = {
   status: TaskStatus;
   priority: TaskPriority;
   dueDate: string;
+  dueTime: string | null;
   tags: string[];
   estimatedMinutes: number;
   energyLevel: EnergyLevel;
@@ -58,6 +65,20 @@ export type Task = {
   projectId: string | null;
   emoji: string | null;
   icon: string | null;
+  repeatEnabled: boolean;
+  repeatFrequency: RepeatFrequency;
+  repeatInterval: number;
+  repeatDaysOfWeek: RepeatWeekday[];
+  repeatDayOfMonth: number | null;
+  repeatEndType: RepeatEndType;
+  repeatEndDate: string | null;
+  repeatCount: number | null;
+  completedOccurrences: number;
+  nextDueDate: string | null;
+  lastGeneratedDate: string | null;
+  recurringParentId: string | null;
+  isRecurringInstance: boolean;
+  reminders: Reminder[];
   isDemoData?: boolean;
 };
 
@@ -67,6 +88,7 @@ export type TaskFormValues = {
   status: TaskStatus;
   priority: TaskPriority;
   dueDate: string;
+  dueTime: string;
   tags: string;
   estimatedMinutes: string;
   energyLevel: EnergyLevel;
@@ -74,6 +96,48 @@ export type TaskFormValues = {
   projectId: string;
   emoji: string;
   icon: string;
+  repeatEnabled: boolean;
+  repeatFrequency: RepeatFrequency;
+  repeatInterval: string;
+  repeatDaysOfWeek: RepeatWeekday[];
+  repeatDayOfMonth: string;
+  repeatEndType: RepeatEndType;
+  repeatEndDate: string;
+  repeatCount: string;
+  completedOccurrences: number;
+  nextDueDate: string;
+  lastGeneratedDate: string;
+  recurringParentId: string;
+  isRecurringInstance: boolean;
+  reminders: Reminder[];
+};
+
+export type RecurrenceRule = {
+  repeatEnabled: boolean;
+  repeatFrequency: RepeatFrequency;
+  repeatInterval: number;
+  repeatDaysOfWeek: RepeatWeekday[];
+  repeatDayOfMonth: number | null;
+  repeatEndType: RepeatEndType;
+  repeatEndDate: string | null;
+  repeatCount: number | null;
+  completedOccurrences: number;
+  nextDueDate: string | null;
+  lastGeneratedDate: string | null;
+};
+
+export type Reminder = {
+  id: string;
+  taskId: string;
+  type: ReminderType;
+  remindAt: string;
+  minutesBefore: number | null;
+  enabled: boolean;
+  firedAt: string | null;
+  dismissedAt: string | null;
+  snoozedUntil: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type Project = {

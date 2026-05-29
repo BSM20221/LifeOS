@@ -52,6 +52,8 @@ import type {
   ProjectStats,
   SavedFilter,
   SavedFilterFormValues,
+  Reminder,
+  SnoozeOption,
   Task,
   TaskFormValues,
   TaskStatus,
@@ -88,6 +90,9 @@ import { TagList } from "./components/TaskBrowseComponents";
 import { TodayPage } from "./components/TodayComponents";
 import { WeeklyReviewPage } from "./components/WeeklyReviewComponents";
 import { calculateWeeklyStats, getCompletedTasksForWeek, getCurrentWeekId, getWeekRange } from "./weeklyUtils";
+import { ReminderCenter, ReminderPermissionCard } from "./components/ReminderComponents";
+import { calculateNextDueDate, getStatusForNextDueDate, isTaskOverdue, shouldStopRecurrence } from "./recurrenceUtils";
+import { calculateReminderTime, dismissReminder, getDueReminders, markReminderFired, snoozeReminder } from "./reminderUtils";
 
 type PageId = "dashboard" | "inbox" | "today" | "upcoming" | "projects" | "saved-views" | "focus" | "insights" | "habits" | "weekly-review" | "settings";
 
@@ -167,6 +172,10 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [creatingStarterProjects, setCreatingStarterProjects] = useState(false);
   const [selectedWeekId, setSelectedWeekId] = useState(() => getCurrentWeekId());
   const [weeklySaveState, setWeeklySaveState] = useState<{ status: "idle" | "saving" | "saved" | "error"; message: string }>({ status: "idle", message: "" });
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() =>
+    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported"
+  );
+  const [reminderNow, setReminderNow] = useState(() => new Date());
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [todayDateId] = useState(() => getTodayDateId());
@@ -202,6 +211,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }, [selectedWeekId]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setReminderNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     void setDoc(
       doc(db, "users", user.uid),
       {
@@ -229,13 +243,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
   const openTasks = tasks.filter((task) => !["done", "archived"].includes(task.status));
   const inboxTasks = openTasks.filter((task) => task.status === "inbox");
-  const todayTasks = openTasks.filter((task) => task.status === "today");
-  const upcomingTasks = openTasks.filter((task) => task.status === "upcoming");
+  const todayTasks = openTasks.filter((task) => task.status === "today" || task.dueDate === todayDateId);
+  const upcomingTasks = openTasks.filter((task) => task.status === "upcoming" || (task.dueDate && task.dueDate > todayDateId));
   const doneTasks = tasks.filter((task) => task.status === "done");
   const highPriorityTasks = openTasks.filter((task) => task.priority === "high");
   const noProjectTasks = openTasks.filter((task) => !task.projectId);
-  const overdueTasks = openTasks.filter((task) => getDueDateGroup(task.dueDate) === "overdue");
+  const overdueTasks = openTasks.filter((task) => isTaskOverdue(task));
   const activeHabits = habits.filter((habit) => habit.active && !habit.archived);
+  const dueReminders = useMemo(() => getDueReminders(openTasks, reminderNow), [openTasks, reminderNow]);
   const todayCompletedFocusSessions = focusSessions.filter((session) => session.dailyPlanDate === todayDateId && session.status === "completed").length;
   const hasActiveFocusSession = focusSessions.some((session) => session.status === "running" || session.status === "paused");
   const incompleteHabitsToday = activeHabits.filter((habit) => !habit.completionDates.includes(todayDateId)).length;
@@ -249,9 +264,11 @@ function ProtectedLifeOS({ user }: { user: User }) {
       focus: hasActiveFocusSession ? "•" : todayCompletedFocusSessions,
       habits: incompleteHabitsToday,
       "weekly-review": weeklyReview.completedAt ? "" : "!",
+      insights: dueReminders.length,
     }),
     [
       hasActiveFocusSession,
+      dueReminders.length,
       incompleteHabitsToday,
       inboxTasks.length,
       projects,
@@ -262,6 +279,21 @@ function ProtectedLifeOS({ user }: { user: User }) {
       weeklyReview.completedAt,
     ]
   );
+
+  useEffect(() => {
+    if (notificationPermission !== "granted") {
+      return;
+    }
+
+    dueReminders
+      .filter(({ reminder }) => !reminder.firedAt)
+      .forEach(({ task, reminder }) => {
+        new Notification(`Reminder: ${displayWithEmoji(task.title, task.emoji)}`, {
+          body: task.dueDate ? `Due ${task.dueDate}${task.dueTime ? ` at ${task.dueTime}` : ""}` : "Reminder due now",
+        });
+        void updateTaskReminder(task, markReminderFired(reminder));
+      });
+  }, [dueReminders, notificationPermission]);
   const todayStats = useMemo(() => calculateTodayStats(tasks, dailyPlan, todayDateId), [dailyPlan, tasks, todayDateId]);
   const todayFocusStats = useMemo(() => getTodayFocusStats(focusSessions, todayDateId, tasks), [focusSessions, tasks, todayDateId]);
   const dashboardRange = useMemo(
@@ -332,12 +364,16 @@ function ProtectedLifeOS({ user }: { user: User }) {
           ? tasks.filter((task) => task.status === "archived")
           : activePage === "projects" || activePage === "saved-views" || activePage === "focus" || activePage === "insights" || activePage === "habits" || activePage === "weekly-review"
             ? []
-            : activePage === "inbox" || activePage === "today" || activePage === "upcoming"
-              ? tasks.filter((task) => task.status === activePage)
-              : [];
+            : activePage === "today"
+              ? tasks.filter((task) => task.status === "today" || task.dueDate === todayDateId)
+              : activePage === "upcoming"
+                ? tasks.filter((task) => task.status === "upcoming" || (task.dueDate && task.dueDate > todayDateId))
+                : activePage === "inbox"
+                  ? tasks.filter((task) => task.status === "inbox")
+                  : [];
 
     return applyTaskFilters(baseTasks, taskFilters);
-  }, [activePage, taskFilters, tasks]);
+  }, [activePage, taskFilters, tasks, todayDateId]);
 
   async function createTaskFromQuick(rawInput: string, defaultStatus: TaskStatus) {
     const parsed = parseQuickCapture(rawInput, selectableProjects);
@@ -345,12 +381,18 @@ function ProtectedLifeOS({ user }: { user: User }) {
       throw new Error("Add a task title before saving.");
     }
 
-    await addDoc(collection(db, "users", user.uid, "tasks"), {
+    const taskRef = doc(collection(db, "users", user.uid, "tasks"));
+    const dueDate = parsed.dueDate || (defaultStatus === "today" ? getTodayISODate() : "");
+    const reminders = parsed.reminders.map((reminder) => ({ ...reminder, taskId: taskRef.id }));
+
+    await setDoc(taskRef, {
+      id: taskRef.id,
       title: parsed.title,
       description: "",
       status: defaultStatus,
       priority: parsed.priority,
-      dueDate: defaultStatus === "today" ? getTodayISODate() : "",
+      dueDate,
+      dueTime: dueDate && parsed.dueTime ? parsed.dueTime : null,
       tags: parsed.tags,
       estimatedMinutes: 25,
       energyLevel: "medium",
@@ -362,6 +404,20 @@ function ProtectedLifeOS({ user }: { user: User }) {
       projectId: parsed.projectId,
       emoji: null,
       icon: null,
+      repeatEnabled: parsed.repeatEnabled,
+      repeatFrequency: parsed.repeatFrequency,
+      repeatInterval: parsed.repeatInterval,
+      repeatDaysOfWeek: parsed.repeatDaysOfWeek,
+      repeatDayOfMonth: parsed.repeatDayOfMonth,
+      repeatEndType: parsed.repeatEndType,
+      repeatEndDate: parsed.repeatEndDate,
+      repeatCount: parsed.repeatCount,
+      completedOccurrences: 0,
+      nextDueDate: parsed.repeatEnabled ? dueDate || null : null,
+      lastGeneratedDate: null,
+      recurringParentId: null,
+      isRecurringInstance: false,
+      reminders,
     });
 
     if (parsed.unresolvedProjectName) {
@@ -385,14 +441,18 @@ function ProtectedLifeOS({ user }: { user: User }) {
     if (task) {
       await updateDoc(doc(db, "users", user.uid, "tasks", task.id), {
         ...payload,
+        reminders: attachReminderTaskIds(payload.reminders, task.id),
         completedAt,
         updatedAt: serverTimestamp(),
         userId: user.uid,
       });
       setActionMessage("Task updated.");
     } else {
-      await addDoc(collection(db, "users", user.uid, "tasks"), {
+      const taskRef = doc(collection(db, "users", user.uid, "tasks"));
+      await setDoc(taskRef, {
         ...payload,
+        id: taskRef.id,
+        reminders: attachReminderTaskIds(payload.reminders, taskRef.id),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         completedAt,
@@ -410,6 +470,65 @@ function ProtectedLifeOS({ user }: { user: User }) {
       updatedAt: serverTimestamp(),
       userId: user.uid,
     });
+  }
+
+  async function completeTask(task: Task) {
+    if (!task.repeatEnabled || task.repeatFrequency === "none") {
+      await updateTask(task, { status: "done", completedAt: serverTimestamp() });
+      return;
+    }
+
+    const completedOccurrences = task.completedOccurrences + 1;
+    const currentDueDate = task.dueDate || getTodayISODate();
+    const nextDueDate = calculateNextDueDate(task, currentDueDate);
+    const stopRepeating = shouldStopRecurrence(task, completedOccurrences, nextDueDate);
+
+    if (stopRepeating) {
+      await updateTask(task, {
+        status: "done",
+        completedAt: serverTimestamp(),
+        completedOccurrences,
+        lastGeneratedDate: currentDueDate,
+        nextDueDate: null,
+      });
+      return;
+    }
+
+    await updateTask(task, {
+      status: getStatusForNextDueDate(nextDueDate),
+      dueDate: nextDueDate ?? "",
+      completedAt: null,
+      completedOccurrences,
+      lastGeneratedDate: currentDueDate,
+      nextDueDate,
+      reminders: resetRemindersForNextOccurrence(task, nextDueDate),
+    });
+  }
+
+  async function updateTaskReminder(task: Task, nextReminder: Reminder) {
+    await updateTask(task, {
+      reminders: task.reminders.map((reminder) => (reminder.id === nextReminder.id ? nextReminder : reminder)),
+    });
+  }
+
+  function dismissTaskReminder(task: Task, reminder: Reminder) {
+    void runAction(() => updateTaskReminder(task, dismissReminder(reminder)), "Reminder dismissed.");
+  }
+
+  function snoozeTaskReminder(task: Task, reminder: Reminder, option: SnoozeOption) {
+    void runAction(() => updateTaskReminder(task, snoozeReminder(reminder, option)), "Reminder snoozed.");
+  }
+
+  async function requestReminderNotifications() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      setActionError("Browser notifications are not supported in this browser.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    setActionMessage(permission === "granted" ? "Reminder notifications enabled." : "Notifications are not enabled. In-app reminders still work.");
   }
 
   function requestConfirmation(dialog: ConfirmDialogState) {
@@ -661,7 +780,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   function markTaskDoneFromFocus(task: Task) {
-    void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.");
+    void runAction(() => completeTask(task), task.repeatEnabled ? "Recurring task advanced." : "Task marked done.");
   }
 
   async function saveProject(values: ProjectFormValues, project: Project | null) {
@@ -1141,6 +1260,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {favoriteQuoteState.error ? <StatusBanner tone="error" message={favoriteQuoteState.error} /> : null}
         {habitState.error ? <StatusBanner tone="error" message={habitState.error} /> : null}
         {weeklyReviewState.error ? <StatusBanner tone="error" message={weeklyReviewState.error} /> : null}
+        <ReminderCenter dueReminders={dueReminders} onDismiss={dismissTaskReminder} onSnooze={snoozeTaskReminder} />
 
         {activePage === "dashboard" ? (
           <DashboardPage
@@ -1212,7 +1332,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onToggleTimeBlock={toggleTimeBlock}
             onSaveReflection={(reflection) => runAction(() => saveReflection(reflection), "Reflection saved.")}
             onEditTask={(task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId })}
-            onMarkDone={(task) => void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.")}
+            onMarkDone={(task) => void runAction(() => completeTask(task), task.repeatEnabled ? "Recurring task advanced." : "Task marked done.")}
             onMoveTask={(task, status) =>
               void runAction(() => updateTask(task, { status, completedAt: null }), status === "inbox" ? "Task moved to Inbox." : "Task moved to Upcoming.")
             }
@@ -1374,7 +1494,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             taskActions={{
               onEdit: (task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId }),
               onDelete: deleteTask,
-              onMarkDone: (task) => void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done."),
+              onMarkDone: (task) => void runAction(() => completeTask(task), task.repeatEnabled ? "Recurring task advanced." : "Task marked done."),
               onUndoDone: (task) => void runAction(() => updateTask(task, { status: "today", completedAt: null }), "Task moved back to Today."),
               onArchive: (task) => void runAction(() => updateTask(task, { status: "archived" }), "Task archived."),
               onMoveToday: (task) =>
@@ -1395,7 +1515,17 @@ function ProtectedLifeOS({ user }: { user: User }) {
           </PagePanel>
         ) : null}
 
-        {activePage === "settings" ? <SettingsPage user={user} tasks={tasks} projects={projects} savedFilters={savedFilters} tagCount={tagCounts.length} /> : null}
+        {activePage === "settings" ? (
+          <SettingsPage
+            user={user}
+            tasks={tasks}
+            projects={projects}
+            savedFilters={savedFilters}
+            tagCount={tagCounts.length}
+            notificationPermission={notificationPermission}
+            onEnableNotifications={requestReminderNotifications}
+          />
+        ) : null}
 
         {activePage !== "projects" &&
         activePage !== "saved-views" &&
@@ -1417,7 +1547,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             onEdit={(task) => setTaskEditor({ task, defaultStatus: task.status, defaultProjectId: task.projectId })}
             onDelete={deleteTask}
             onMarkDone={(task) =>
-              void runAction(() => updateTask(task, { status: "done", completedAt: serverTimestamp() }), "Task marked done.")
+              void runAction(() => completeTask(task), task.repeatEnabled ? "Recurring task advanced." : "Task marked done.")
             }
             onUndoDone={(task) =>
               void runAction(() => updateTask(task, { status: "today", completedAt: null }), "Task moved back to Today.")
@@ -1848,12 +1978,16 @@ function SettingsPage({
   projects,
   savedFilters,
   tagCount,
+  notificationPermission,
+  onEnableNotifications,
 }: {
   user: User;
   tasks: Task[];
   projects: Project[];
   savedFilters: SavedFilter[];
   tagCount: number;
+  notificationPermission: NotificationPermission | "unsupported";
+  onEnableNotifications: () => Promise<void>;
 }) {
   const openCount = tasks.filter((task) => !["done", "archived"].includes(task.status)).length;
   const activeProjectCount = projects.filter((project) => project.status === "active" || project.status === "paused").length;
@@ -1916,17 +2050,24 @@ function SettingsPage({
           ))}
         </div>
       </article>
+
+      <ReminderPermissionCard permission={notificationPermission} onEnable={onEnableNotifications} />
     </section>
   );
 }
 
 function normalizeTaskForm(values: TaskFormValues) {
+  const repeatFrequency = values.repeatEnabled ? values.repeatFrequency : "none";
+  const repeatCount = values.repeatEndType === "afterCount" ? Math.max(1, Number(values.repeatCount || 1)) : null;
+  const repeatDayOfMonth = values.repeatFrequency === "monthly" && values.repeatDayOfMonth ? Math.min(31, Math.max(1, Number(values.repeatDayOfMonth))) : null;
+
   return {
     title: values.title.trim(),
     description: values.description.trim(),
     status: values.status,
     priority: values.priority,
     dueDate: values.dueDate,
+    dueTime: values.dueDate && values.dueTime ? values.dueTime : null,
     tags: normalizeTags(values.tags),
     estimatedMinutes: Math.max(0, Number(values.estimatedMinutes || 0)),
     energyLevel: values.energyLevel,
@@ -1934,7 +2075,52 @@ function normalizeTaskForm(values: TaskFormValues) {
     projectId: values.projectId || null,
     emoji: values.emoji || null,
     icon: values.icon || null,
+    repeatEnabled: values.repeatEnabled && repeatFrequency !== "none",
+    repeatFrequency,
+    repeatInterval: Math.max(1, Number(values.repeatInterval || 1)),
+    repeatDaysOfWeek: repeatFrequency === "weekly" ? values.repeatDaysOfWeek : [],
+    repeatDayOfMonth,
+    repeatEndType: values.repeatEnabled ? values.repeatEndType : "never",
+    repeatEndDate: values.repeatEndType === "onDate" && values.repeatEndDate ? values.repeatEndDate : null,
+    repeatCount,
+    completedOccurrences: Math.max(0, Number(values.completedOccurrences || 0)),
+    nextDueDate: values.repeatEnabled ? values.nextDueDate || values.dueDate || null : null,
+    lastGeneratedDate: values.lastGeneratedDate || null,
+    recurringParentId: values.recurringParentId || null,
+    isRecurringInstance: values.isRecurringInstance,
+    reminders: values.reminders.map((reminder) => ({
+      ...reminder,
+      taskId: reminder.taskId || "",
+      updatedAt: new Date().toISOString(),
+    })),
   };
+}
+
+function attachReminderTaskIds(reminders: Reminder[], taskId: string) {
+  return reminders.map((reminder) => ({
+    ...reminder,
+    taskId,
+  }));
+}
+
+function resetRemindersForNextOccurrence(task: Task, nextDueDate: string | null) {
+  const now = getNowISOString();
+
+  return task.reminders.map((reminder) => {
+    const nextRemindAt =
+      nextDueDate && reminder.type !== "custom"
+        ? calculateReminderTime(nextDueDate, task.dueTime, reminder.minutesBefore ?? 0)
+        : reminder.remindAt;
+
+    return {
+      ...reminder,
+      remindAt: nextRemindAt || reminder.remindAt,
+      firedAt: null,
+      dismissedAt: null,
+      snoozedUntil: null,
+      updatedAt: now,
+    };
+  });
 }
 
 function normalizeHabitForm(values: HabitFormValues) {

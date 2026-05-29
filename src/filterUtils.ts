@@ -43,7 +43,7 @@ export function applyTaskFilters(tasks: Task[], criteria: FilterCriteria) {
       return false;
     }
 
-    if (criteria.dueDateGroup && getDueDateGroup(task.dueDate) !== criteria.dueDateGroup) {
+    if (criteria.dueDateGroup && getDueDateGroup(task.dueDate, task.dueTime) !== criteria.dueDateGroup) {
       return false;
     }
 
@@ -58,7 +58,7 @@ export function applyTaskFilters(tasks: Task[], criteria: FilterCriteria) {
   });
 }
 
-export function getDueDateGroup(dueDate: string): DueDateGroup {
+export function getDueDateGroup(dueDate: string, dueTime?: string | null): DueDateGroup {
   if (!dueDate) {
     return "no-due-date";
   }
@@ -77,6 +77,13 @@ export function getDueDateGroup(dueDate: string): DueDateGroup {
   }
 
   if (sameDay(due, today)) {
+    if (dueTime && /^\d{2}:\d{2}$/.test(dueTime)) {
+      const dueDateTime = new Date(`${dueDate}T${dueTime}:00`);
+      if (!Number.isNaN(dueDateTime.getTime()) && dueDateTime.getTime() < new Date().getTime()) {
+        return "overdue";
+      }
+    }
+
     return "today";
   }
 

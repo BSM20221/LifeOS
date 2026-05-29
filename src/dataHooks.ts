@@ -10,7 +10,23 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { DailyPlan, FavoriteQuote, FocusSession, Habit, HabitCompletion, HabitFrequency, Project, ProjectStats, SavedFilter, Task, WeeklyReview } from "./types";
+import type {
+  DailyPlan,
+  FavoriteQuote,
+  FocusSession,
+  Habit,
+  HabitCompletion,
+  HabitFrequency,
+  Project,
+  ProjectStats,
+  Reminder,
+  RepeatEndType,
+  RepeatFrequency,
+  RepeatWeekday,
+  SavedFilter,
+  Task,
+  WeeklyReview,
+} from "./types";
 import { isFilterCriteria, normalizeTags } from "./filterUtils";
 import { getFriendlyError, isEnergyLevel, isProjectArea, isProjectStatus, isTaskPriority, isTaskStatus } from "./utils";
 import { createEmptyDailyPlan, normalizeReflection, normalizeTimeBlock } from "./todayUtils";
@@ -319,6 +335,7 @@ function mapTaskDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
     status: isTaskStatus(data.status) ? data.status : "inbox",
     priority: isTaskPriority(data.priority) ? data.priority : "medium",
     dueDate: String(data.dueDate ?? ""),
+    dueTime: typeof data.dueTime === "string" && data.dueTime ? data.dueTime : null,
     tags: Array.isArray(data.tags) ? normalizeTags(data.tags.map(String)) : [],
     estimatedMinutes: Number(data.estimatedMinutes ?? 25),
     energyLevel: isEnergyLevel(data.energyLevel) ? data.energyLevel : "medium",
@@ -330,6 +347,20 @@ function mapTaskDocument(snapshot: QueryDocumentSnapshot<DocumentData>): Task {
     projectId: typeof data.projectId === "string" ? data.projectId : null,
     emoji: typeof data.emoji === "string" && data.emoji ? data.emoji : null,
     icon: typeof data.icon === "string" && data.icon ? data.icon : null,
+    repeatEnabled: Boolean(data.repeatEnabled || (isRepeatFrequency(data.repeatFrequency) && data.repeatFrequency !== "none")),
+    repeatFrequency: isRepeatFrequency(data.repeatFrequency) ? data.repeatFrequency : data.repeatEnabled ? "daily" : "none",
+    repeatInterval: Math.max(1, Number(data.repeatInterval ?? 1)),
+    repeatDaysOfWeek: toRepeatWeekdays(data.repeatDaysOfWeek),
+    repeatDayOfMonth: typeof data.repeatDayOfMonth === "number" ? data.repeatDayOfMonth : null,
+    repeatEndType: isRepeatEndType(data.repeatEndType) ? data.repeatEndType : "never",
+    repeatEndDate: typeof data.repeatEndDate === "string" && data.repeatEndDate ? data.repeatEndDate : null,
+    repeatCount: typeof data.repeatCount === "number" && data.repeatCount > 0 ? data.repeatCount : null,
+    completedOccurrences: Math.max(0, Number(data.completedOccurrences ?? 0)),
+    nextDueDate: typeof data.nextDueDate === "string" && data.nextDueDate ? data.nextDueDate : null,
+    lastGeneratedDate: typeof data.lastGeneratedDate === "string" && data.lastGeneratedDate ? data.lastGeneratedDate : null,
+    recurringParentId: typeof data.recurringParentId === "string" ? data.recurringParentId : null,
+    isRecurringInstance: Boolean(data.isRecurringInstance),
+    reminders: normalizeReminders(data.reminders, snapshot.id),
     isDemoData: Boolean(data.isDemoData),
   };
 }
@@ -523,6 +554,40 @@ function normalizeProjectReviewStates(value: unknown) {
   }, {});
 }
 
+function normalizeReminders(value: unknown, taskId: string): Reminder[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry): Reminder | null => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const reminder = entry as Record<string, unknown>;
+      const remindAt = typeof reminder.remindAt === "string" ? reminder.remindAt : "";
+      if (!remindAt) {
+        return null;
+      }
+
+      return {
+        id: typeof reminder.id === "string" && reminder.id ? reminder.id : `${taskId}-${remindAt}`,
+        taskId: typeof reminder.taskId === "string" && reminder.taskId ? reminder.taskId : taskId,
+        type: reminder.type === "at-time" || reminder.type === "before-due" || reminder.type === "custom" ? reminder.type : "custom",
+        remindAt,
+        minutesBefore: typeof reminder.minutesBefore === "number" ? reminder.minutesBefore : null,
+        enabled: reminder.enabled !== false,
+        firedAt: typeof reminder.firedAt === "string" ? reminder.firedAt : null,
+        dismissedAt: typeof reminder.dismissedAt === "string" ? reminder.dismissedAt : null,
+        snoozedUntil: typeof reminder.snoozedUntil === "string" ? reminder.snoozedUntil : null,
+        createdAt: typeof reminder.createdAt === "string" ? reminder.createdAt : null,
+        updatedAt: typeof reminder.updatedAt === "string" ? reminder.updatedAt : null,
+      };
+    })
+    .filter((entry): entry is Reminder => Boolean(entry));
+}
+
 function normalizeHabitCompletionDates(data: DocumentData) {
   const directDates = [data.completionDates, data.completedDates, data.dates].find(Array.isArray);
   if (Array.isArray(directDates)) {
@@ -546,6 +611,30 @@ function isDateIdLike(value: string) {
 
 function isHabitFrequency(value: unknown): value is HabitFrequency {
   return value === "daily" || value === "weekly" || value === "custom";
+}
+
+function isRepeatFrequency(value: unknown): value is RepeatFrequency {
+  return value === "none" || value === "daily" || value === "weekly" || value === "monthly" || value === "yearly" || value === "custom";
+}
+
+function isRepeatEndType(value: unknown): value is RepeatEndType {
+  return value === "never" || value === "onDate" || value === "afterCount";
+}
+
+function toRepeatWeekdays(value: unknown): RepeatWeekday[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((day): day is RepeatWeekday =>
+    day === "monday" ||
+    day === "tuesday" ||
+    day === "wednesday" ||
+    day === "thursday" ||
+    day === "friday" ||
+    day === "saturday" ||
+    day === "sunday"
+  );
 }
 
 function calculateHabitStreak(completionDates: string[]) {

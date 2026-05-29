@@ -9,6 +9,7 @@ import {
   getFocusModeLabel,
 } from "../focusUtils";
 import { displayWithEmoji } from "../emojiPresets";
+import { ReminderBadge } from "./ReminderComponents";
 import { formatMinutes } from "../todayUtils";
 import { getFriendlyError } from "../utils";
 import { EmptyState, StatusBanner } from "./Common";
@@ -552,7 +553,9 @@ function SelectedFocusTask({ task, project }: { task: Task; project: Project | n
             </em>
           ) : null}
           <em className={`priority ${task.priority}`}>{task.priority}</em>
+          {task.dueDate ? <span>Due {task.dueDate}{task.dueTime ? ` at ${task.dueTime}` : ""}</span> : null}
           <span>{task.estimatedMinutes} min estimate</span>
+          <ReminderBadge task={task} />
         </div>
       </div>
     </section>
