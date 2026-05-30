@@ -25,6 +25,7 @@ import type {
   RepeatWeekday,
   SavedFilter,
   Task,
+  UserSettings,
   WeeklyReview,
 } from "./types";
 import { isFilterCriteria, normalizeTags } from "./filterUtils";
@@ -32,6 +33,7 @@ import { getFriendlyError, isEnergyLevel, isProjectArea, isProjectStatus, isTask
 import { createEmptyDailyPlan, normalizeReflection, normalizeTimeBlock } from "./todayUtils";
 import { isFocusMode, isFocusStatus } from "./focusUtils";
 import { createEmptyWeeklyReview } from "./weeklyUtils";
+import { createDefaultUserSettings, normalizeAccentColor, normalizeAppIcon, normalizeThemeMode, normalizeThemePreset } from "./themeUtils";
 
 export function useUserTasks(user: User) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -312,6 +314,34 @@ export function useWeeklyReview(user: User, weekId: string) {
   return { review, exists, loading, error };
 }
 
+export function useUserSettings(user: User) {
+  const [settings, setSettings] = useState<UserSettings>(() => createDefaultUserSettings(user.uid));
+  const [exists, setExists] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    setSettings(createDefaultUserSettings(user.uid));
+
+    return onSnapshot(
+      doc(db, "users", user.uid, "settings", "main"),
+      (snapshot) => {
+        setExists(snapshot.exists());
+        setSettings(snapshot.exists() ? mapUserSettingsDocument(snapshot.data(), user.uid) : createDefaultUserSettings(user.uid));
+        setLoading(false);
+      },
+      (snapshotError) => {
+        setError(getFriendlyError(snapshotError));
+        setLoading(false);
+      }
+    );
+  }, [user.uid]);
+
+  return { settings, exists, loading, error };
+}
+
 export function getProjectStats(projectId: string, tasks: Task[]): ProjectStats {
   const projectTasks = tasks.filter((task) => task.projectId === projectId && task.status !== "archived");
   const completedTasks = projectTasks.filter((task) => task.status === "done").length;
@@ -511,6 +541,23 @@ function mapWeeklyReviewDocument(id: string, data: DocumentData | undefined, use
     createdAt: reviewData.createdAt ?? null,
     updatedAt: reviewData.updatedAt ?? null,
     completedAt: typeof reviewData.completedAt === "string" ? reviewData.completedAt : null,
+  };
+}
+
+function mapUserSettingsDocument(data: DocumentData | undefined, userId: string): UserSettings {
+  const settingsData = data ?? {};
+  const themePreset = normalizeThemePreset(settingsData.themePreset);
+
+  return {
+    ...createDefaultUserSettings(userId),
+    id: "main",
+    userId: String(settingsData.userId ?? userId),
+    themeMode: normalizeThemeMode(settingsData.themeMode),
+    themePreset,
+    accentColor: normalizeAccentColor(settingsData.accentColor, themePreset),
+    appIcon: normalizeAppIcon(settingsData.appIcon),
+    createdAt: settingsData.createdAt ?? null,
+    updatedAt: settingsData.updatedAt ?? null,
   };
 }
 

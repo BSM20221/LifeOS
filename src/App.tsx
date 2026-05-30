@@ -32,6 +32,7 @@ import {
   useUserHabits,
   useUserProjects,
   useUserSavedFilters,
+  useUserSettings,
   useUserTasks,
   useWeeklyReview,
 } from "./dataHooks";
@@ -59,6 +60,7 @@ import type {
   TaskStatus,
   TimeBlock,
   TimeBlockFormValues,
+  UserSettings,
   WeeklyReview,
 } from "./types";
 import { applyTaskFilters, cleanFilterCriteria, getTaskCountsByFilter, getTaskCountsByTag, getDueDateGroup, normalizeTags } from "./filterUtils";
@@ -105,6 +107,7 @@ import {
   type ImportPreviewState,
   type LifeOSBackup,
 } from "./utils/backupUtils";
+import { getAppIconDataUrl, getDerivedThemeColors, getEffectiveAccentColor, getResolvedThemeMode } from "./themeUtils";
 
 type PageId =
   | "dashboard"
@@ -235,6 +238,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const favoriteQuoteState = useUserFavoriteQuotes(user);
   const habitState = useUserHabits(user);
   const weeklyReviewState = useWeeklyReview(user, selectedWeekId);
+  const settingsState = useUserSettings(user);
   const { tasks } = taskState;
   const { projects } = projectState;
   const { filters: savedFilters } = savedFilterState;
@@ -243,6 +247,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const { habits } = habitState;
   const { plans: dailyPlans } = dailyPlansState;
   const weeklyReview = weeklyReviewState.review;
+  const userSettings = settingsState.settings;
   const dailyPlan = dailyPlanState.plan;
   const dailyQuote = useMemo(() => getDailyQuote(todayDateId, quoteOffset), [quoteOffset, todayDateId]);
 
@@ -271,6 +276,36 @@ function ProtectedLifeOS({ user }: { user: User }) {
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   }, []);
+
+  useEffect(() => {
+    const applyAppearance = () => {
+      const resolvedMode = getResolvedThemeMode(userSettings.themeMode);
+      const accent = getEffectiveAccentColor(userSettings);
+      const colors = getDerivedThemeColors(accent);
+      const root = document.documentElement;
+      root.dataset.themeMode = resolvedMode;
+      root.dataset.themePreference = userSettings.themeMode;
+      root.style.setProperty("--color-primary", colors.primary);
+      root.style.setProperty("--color-primary-strong", colors.primaryStrong);
+      root.style.setProperty("--color-primary-soft", colors.primarySoft);
+      root.style.setProperty("--lifeos-icon-url", `url("${getAppIconDataUrl(userSettings.appIcon, accent, resolvedMode)}")`);
+
+      const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (favicon) {
+        favicon.href = getAppIconDataUrl(userSettings.appIcon, accent, resolvedMode);
+      }
+    };
+
+    applyAppearance();
+
+    if (userSettings.themeMode !== "system" || !window.matchMedia) {
+      return;
+    }
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", applyAppearance);
+    return () => media.removeEventListener("change", applyAppearance);
+  }, [userSettings]);
 
   useEffect(() => {
     void setDoc(
@@ -589,6 +624,32 @@ function ProtectedLifeOS({ user }: { user: User }) {
     const permission = await Notification.requestPermission();
     setNotificationPermission(permission);
     setActionMessage(permission === "granted" ? "Reminder notifications enabled." : "Notifications are not enabled. In-app reminders still work.");
+  }
+
+  async function saveUserSettings(nextSettings: UserSettings) {
+    try {
+      assertOnline();
+      setActionError("");
+      setActionMessage("");
+      await setDoc(
+        doc(db, "users", user.uid, "settings", "main"),
+        {
+          id: "main",
+          userId: user.uid,
+          themeMode: nextSettings.themeMode,
+          themePreset: nextSettings.themePreset,
+          accentColor: nextSettings.accentColor,
+          appIcon: nextSettings.appIcon,
+          createdAt: nextSettings.createdAt ?? serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setActionMessage("Appearance saved.");
+    } catch (error) {
+      setActionError(getFriendlyError(error));
+      throw error;
+    }
   }
 
   function requestConfirmation(dialog: ConfirmDialogState) {
@@ -1568,7 +1629,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
     <main className="app-shell">
       <aside className="sidebar" aria-label="Primary">
         <div className="brand-row">
-          <img src="/lifeos-mark.svg" alt="" className="brand-mark" />
+          <span className="brand-mark app-icon-mark" aria-hidden="true" />
           <div>
             <p className="eyebrow">Personal workspace</p>
             <h1>LifeOS v2</h1>
@@ -1645,6 +1706,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
         {favoriteQuoteState.error ? <StatusBanner tone="error" message={favoriteQuoteState.error} /> : null}
         {habitState.error ? <StatusBanner tone="error" message={habitState.error} /> : null}
         {weeklyReviewState.error ? <StatusBanner tone="error" message={weeklyReviewState.error} /> : null}
+        {settingsState.error ? <StatusBanner tone="error" message={settingsState.error} /> : null}
         <ReminderCenter dueReminders={dueReminders} onDismiss={dismissTaskReminder} onSnooze={snoozeTaskReminder} />
 
         {activePage === "dashboard" ? (
@@ -1881,6 +1943,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
             tagCount={tagCounts.length}
             notificationPermission={notificationPermission}
             onEnableNotifications={requestReminderNotifications}
+            appearanceSettings={userSettings}
+            appearanceLoading={settingsState.loading}
+            onSaveAppearance={saveUserSettings}
             installAvailable={Boolean(installPrompt)}
             installStatus={installStatus}
             onInstall={installLifeOS}

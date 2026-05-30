@@ -1,7 +1,17 @@
-import { AlertTriangle, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertTriangle, Monitor, Moon, Paintbrush, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import type { User } from "firebase/auth";
+import { useEffect, useMemo, useState } from "react";
 import { firebaseEnvStatus } from "../../firebase";
-import type { Project, SavedFilter, Task } from "../../types";
+import type { AppIconId, Project, SavedFilter, Task, ThemeMode, ThemePreset, UserSettings } from "../../types";
+import {
+  appIconOptions,
+  createDefaultUserSettings,
+  getAppIconDataUrl,
+  getEffectiveAccentColor,
+  getPresetAccentColor,
+  getResolvedThemeMode,
+  themePresets,
+} from "../../themeUtils";
 import type { ImportPreviewState } from "../../utils/backupUtils";
 import { StatusBanner } from "../Common";
 import { ReminderPermissionCard } from "../ReminderComponents";
@@ -14,6 +24,9 @@ export function SettingsPage({
   tagCount,
   notificationPermission,
   onEnableNotifications,
+  appearanceSettings,
+  appearanceLoading,
+  onSaveAppearance,
   installAvailable,
   installStatus,
   onInstall,
@@ -34,6 +47,9 @@ export function SettingsPage({
   tagCount: number;
   notificationPermission: NotificationPermission | "unsupported";
   onEnableNotifications: () => Promise<void>;
+  appearanceSettings: UserSettings;
+  appearanceLoading: boolean;
+  onSaveAppearance: (settings: UserSettings) => Promise<void>;
   installAvailable: boolean;
   installStatus: string;
   onInstall: () => Promise<void>;
@@ -109,6 +125,8 @@ export function SettingsPage({
         </div>
       </article>
 
+      <AppearanceCard user={user} settings={appearanceSettings} loading={appearanceLoading} onSave={onSaveAppearance} />
+
       <ReminderPermissionCard permission={notificationPermission} onEnable={onEnableNotifications} />
 
       <InstallAppCard installAvailable={installAvailable} installStatus={installStatus} onInstall={onInstall} />
@@ -164,6 +182,168 @@ function InstallAppCard({
         Desktop: use the install icon or browser menu. iPhone/Android: use Share or browser menu, then Add to Home Screen.
       </p>
       {installStatus ? <StatusBanner tone="info" message={installStatus} /> : null}
+    </article>
+  );
+}
+
+function AppearanceCard({
+  user,
+  settings,
+  loading,
+  onSave,
+}: {
+  user: User;
+  settings: UserSettings;
+  loading: boolean;
+  onSave: (settings: UserSettings) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<UserSettings>(settings);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const accentColor = getEffectiveAccentColor(draft);
+  const resolvedMode = getResolvedThemeMode(draft.themeMode);
+  const isDirty = useMemo(
+    () =>
+      draft.themeMode !== settings.themeMode ||
+      draft.themePreset !== settings.themePreset ||
+      draft.accentColor !== settings.accentColor ||
+      draft.appIcon !== settings.appIcon,
+    [draft, settings]
+  );
+
+  useEffect(() => {
+    setDraft(settings);
+    setStatus("");
+    setError("");
+  }, [settings]);
+
+  const updateDraft = (next: Partial<UserSettings>) => {
+    setDraft((current) => ({ ...current, ...next }));
+    setStatus("");
+    setError("");
+  };
+
+  async function saveAppearance(nextSettings = draft) {
+    setSaving(true);
+    setStatus("");
+    setError("");
+    try {
+      await onSave(nextSettings);
+      setStatus("Appearance saved.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save appearance.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function resetAppearance() {
+    const reset = createDefaultUserSettings(user.uid);
+    setDraft(reset);
+    setStatus("");
+    setError("");
+  }
+
+  return (
+    <article className="panel settings-action-card appearance-card">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Appearance</p>
+          <h3>Themes and app icon</h3>
+        </div>
+        <Paintbrush size={20} />
+      </div>
+      <p className="panel-copy">
+        Choose a light, dark, or system theme. Custom colors update LifeOS inside the app; installed PWA icons may need reinstalling to refresh.
+      </p>
+
+      <div className="appearance-preview">
+        <img src={getAppIconDataUrl(draft.appIcon, accentColor, resolvedMode)} alt="" />
+        <div>
+          <strong>LifeOS</strong>
+          <span>{resolvedMode === "dark" ? "Dark" : "Light"} · {themePresets.find((preset) => preset.id === draft.themePreset)?.name ?? "Custom"}</span>
+        </div>
+      </div>
+
+      <fieldset className="appearance-fieldset">
+        <legend>Theme mode</legend>
+        <div className="theme-mode-grid" role="radiogroup" aria-label="Theme mode">
+          {[
+            { id: "system" as ThemeMode, label: "System", icon: Monitor },
+            { id: "light" as ThemeMode, label: "Light", icon: Sun },
+            { id: "dark" as ThemeMode, label: "Dark", icon: Moon },
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              type="button"
+              className={draft.themeMode === id ? "theme-option active" : "theme-option"}
+              aria-pressed={draft.themeMode === id}
+              key={id}
+              onClick={() => updateDraft({ themeMode: id })}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="appearance-fieldset">
+        <legend>Accent color</legend>
+        <div className="theme-swatch-grid">
+          {themePresets.map((preset) => (
+            <button
+              type="button"
+              className={draft.themePreset === preset.id ? "theme-swatch active" : "theme-swatch"}
+              aria-pressed={draft.themePreset === preset.id}
+              key={preset.id}
+              onClick={() => updateDraft({ themePreset: preset.id, accentColor: preset.id === "custom" ? draft.accentColor : getPresetAccentColor(preset.id) })}
+            >
+              <span style={{ background: preset.id === "custom" ? draft.accentColor : preset.color }} />
+              <strong>{preset.name}</strong>
+              <small>{preset.description}</small>
+            </button>
+          ))}
+        </div>
+        <label className="custom-color-field">
+          Custom color
+          <input
+            type="color"
+            value={draft.accentColor}
+            onChange={(event) => updateDraft({ themePreset: "custom", accentColor: event.target.value as `#${string}` })}
+          />
+        </label>
+      </fieldset>
+
+      <fieldset className="appearance-fieldset">
+        <legend>App icon</legend>
+        <div className="app-icon-grid">
+          {appIconOptions.map((icon) => (
+            <button
+              type="button"
+              className={draft.appIcon === icon.id ? "app-icon-choice active" : "app-icon-choice"}
+              aria-pressed={draft.appIcon === icon.id}
+              key={icon.id}
+              onClick={() => updateDraft({ appIcon: icon.id as AppIconId })}
+            >
+              <img src={getAppIconDataUrl(icon.id, accentColor, resolvedMode)} alt="" />
+              <span>{icon.name}</span>
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      {error ? <StatusBanner tone="error" message={error} /> : null}
+      {status ? <StatusBanner tone="success" message={status} /> : null}
+
+      <div className="settings-actions-row">
+        <button className="primary-button" type="button" onClick={() => void saveAppearance()} disabled={saving || loading || !isDirty}>
+          {saving ? "Saving..." : isDirty ? "Save appearance" : "Appearance saved"}
+        </button>
+        <button className="ghost-button" type="button" onClick={resetAppearance} disabled={saving || loading}>
+          Reset
+        </button>
+      </div>
     </article>
   );
 }

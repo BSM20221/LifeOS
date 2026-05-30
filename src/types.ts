@@ -18,6 +18,9 @@ export type ReminderType = "at-time" | "before-due" | "custom";
 export type SnoozeOption = "5m" | "10m" | "30m" | "1h" | "tomorrow";
 export type NotificationPermissionState = NotificationPermission | "unsupported";
 export type InsightSeverity = "info" | "success" | "warning" | "danger";
+export type ThemeMode = "system" | "light" | "dark";
+export type ThemePreset = "sage" | "blue" | "violet" | "amber" | "rose" | "custom";
+export type AppIconId = "leaf" | "focus" | "spark" | "moon" | "compass";
 export type AnalyticsRange = "today" | "7-days" | "30-days" | "this-month" | "this-year" | "all-time" | "custom";
 export type PerformanceStatus = "Strong" | "Healthy" | "Needs attention" | "Neglected" | "Stuck";
 export type WeekId = string;
@@ -165,6 +168,17 @@ export type ProjectFormValues = {
   area: ProjectArea;
   emoji: string;
   icon: string;
+};
+
+export type UserSettings = {
+  id: "main";
+  userId: string;
+  themeMode: ThemeMode;
+  themePreset: ThemePreset;
+  accentColor: string;
+  appIcon: AppIconId;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
 };
 
 export type ProjectStats = {

@@ -1,5 +1,6 @@
 :root {
   --color-bg: #f5f7fb;
+  --color-bg-start: #f8fafc;
   --color-bg-elevated: #eef3f7;
   --color-surface: #ffffff;
   --color-surface-soft: #f8fafc;
@@ -23,6 +24,7 @@
   --color-success-soft: #dff1e7;
   --color-info: #376d9f;
   --color-info-soft: #e0edf8;
+  --lifeos-icon-url: url("/lifeos-mark.svg");
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -51,6 +53,29 @@
   -webkit-font-smoothing: antialiased;
 }
 
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+  --color-bg: #0f1714;
+  --color-bg-start: #14211d;
+  --color-bg-elevated: #17241f;
+  --color-surface: #17211d;
+  --color-surface-soft: #1f2b26;
+  --color-surface-muted: #26352f;
+  --color-text: #e8f1ec;
+  --color-text-strong: #f8fffb;
+  --color-muted: #a5b5ae;
+  --color-muted-2: #81918a;
+  --color-border: rgba(231, 241, 236, 0.13);
+  --color-border-strong: rgba(231, 241, 236, 0.22);
+  --color-danger-soft: rgba(185, 67, 58, 0.22);
+  --color-warning-soft: rgba(183, 121, 31, 0.22);
+  --color-success-soft: rgba(47, 125, 85, 0.22);
+  --color-info-soft: rgba(55, 109, 159, 0.24);
+  --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.24);
+  --shadow-card: 0 18px 50px rgba(0, 0, 0, 0.3);
+  --shadow-popover: 0 24px 70px rgba(0, 0, 0, 0.46);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -62,7 +87,7 @@ body {
   background:
     radial-gradient(circle at top left, rgba(35, 104, 115, 0.12), transparent 34vw),
     radial-gradient(circle at 88% 8%, rgba(244, 189, 79, 0.12), transparent 26vw),
-    linear-gradient(180deg, #f8fafc 0%, var(--color-bg) 100%);
+    linear-gradient(180deg, var(--color-bg-start) 0%, var(--color-bg) 100%);
 }
 
 button,
@@ -3330,6 +3355,14 @@ button.tag-chip:hover {
   box-shadow: var(--shadow-soft);
 }
 
+.app-icon-mark {
+  background-image: var(--lifeos-icon-url, url("/lifeos-mark.svg"));
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  flex: 0 0 auto;
+}
+
 .brand-row h1 {
   color: var(--color-text-strong);
   font-size: 1.18rem;
@@ -3958,6 +3991,253 @@ button.tag-chip:hover {
   background: var(--color-surface-soft);
 }
 
+.appearance-card {
+  grid-column: span 2;
+}
+
+.appearance-preview {
+  align-items: center;
+  background: linear-gradient(135deg, var(--color-primary-soft), var(--color-surface));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.appearance-preview img {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  height: 54px;
+  width: 54px;
+}
+
+.appearance-preview div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.appearance-preview strong {
+  color: var(--color-text-strong);
+  font-size: 1rem;
+}
+
+.appearance-preview span {
+  color: var(--color-muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.appearance-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  min-width: 0;
+  padding: 12px;
+}
+
+.appearance-fieldset legend {
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  padding: 0 6px;
+  text-transform: uppercase;
+}
+
+.theme-mode-grid,
+.theme-swatch-grid,
+.app-icon-grid {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.theme-mode-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.theme-swatch-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.app-icon-grid {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+}
+
+.theme-option,
+.theme-swatch,
+.app-icon-choice {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.theme-option {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 10px;
+}
+
+.theme-swatch {
+  align-items: center;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 68px;
+  padding: 10px;
+  text-align: left;
+}
+
+.theme-swatch span {
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.72), 0 0 0 1px var(--color-border);
+  grid-row: span 2;
+  height: 28px;
+  width: 28px;
+}
+
+.theme-swatch strong,
+.app-icon-choice span {
+  color: var(--color-text-strong);
+  font-size: 0.88rem;
+}
+
+.theme-swatch small {
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.theme-option.active,
+.theme-swatch.active,
+.app-icon-choice.active {
+  border-color: color-mix(in srgb, var(--color-primary) 56%, var(--color-border));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-primary) 16%, transparent);
+  background: var(--color-primary-soft);
+}
+
+.custom-color-field {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.custom-color-field input[type="color"] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  height: 38px;
+  padding: 3px;
+  width: 68px;
+}
+
+.app-icon-choice {
+  align-items: center;
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  min-height: 96px;
+  padding: 10px;
+}
+
+.app-icon-choice img {
+  border-radius: var(--radius-md);
+  height: 42px;
+  width: 42px;
+}
+
+:root[data-theme-mode="dark"] .sidebar {
+  background:
+    linear-gradient(180deg, rgba(23, 33, 29, 0.94), rgba(15, 23, 20, 0.92)),
+    var(--color-surface);
+}
+
+:root[data-theme-mode="dark"] .topbar {
+  background: rgba(23, 33, 29, 0.88);
+}
+
+:root[data-theme-mode="dark"] .panel,
+:root[data-theme-mode="dark"] .modal-panel,
+:root[data-theme-mode="dark"] .task-row,
+:root[data-theme-mode="dark"] .auth-panel,
+:root[data-theme-mode="dark"] .metric-card,
+:root[data-theme-mode="dark"] .reporting-dashboard-header,
+:root[data-theme-mode="dark"] .reporting-filter-details,
+:root[data-theme-mode="dark"] .reporting-metric,
+:root[data-theme-mode="dark"] .reporting-chart-card,
+:root[data-theme-mode="dark"] .reporting-explanation-card,
+:root[data-theme-mode="dark"] .reporting-recommendations,
+:root[data-theme-mode="dark"] .reporting-summary-table,
+:root[data-theme-mode="dark"] .demo-data-panel {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+:root[data-theme-mode="dark"] .task-form-section,
+:root[data-theme-mode="dark"] .settings-list div,
+:root[data-theme-mode="dark"] .settings-action-card,
+:root[data-theme-mode="dark"] .empty-state,
+:root[data-theme-mode="dark"] .backup-preview,
+:root[data-theme-mode="dark"] .reporting-check,
+:root[data-theme-mode="dark"] .chart-accessible-summary {
+  background: var(--color-surface-soft);
+}
+
+:root[data-theme-mode="dark"] .quick-add input,
+:root[data-theme-mode="dark"] .auth-form input,
+:root[data-theme-mode="dark"] .task-form input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme-mode="dark"] .task-form select,
+:root[data-theme-mode="dark"] .task-form textarea,
+:root[data-theme-mode="dark"] .compact-select select,
+:root[data-theme-mode="dark"] .search-field,
+:root[data-theme-mode="dark"] .weekly-field input,
+:root[data-theme-mode="dark"] .weekly-field textarea,
+:root[data-theme-mode="dark"] .time-block-form input,
+:root[data-theme-mode="dark"] .time-block-form select,
+:root[data-theme-mode="dark"] .time-block-form textarea {
+  background: var(--color-surface-soft);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+:root[data-theme-mode="dark"] .hero-band,
+:root[data-theme-mode="dark"] .today-hero,
+:root[data-theme-mode="dark"] .focus-timer {
+  background:
+    linear-gradient(135deg, rgba(15, 23, 20, 0.98), rgba(35, 104, 115, 0.48)),
+    url("/lifeos-texture.svg");
+}
+
+:root[data-theme-mode="dark"] .primary-button {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+}
+
+:root[data-theme-mode="dark"] .secondary-button,
+:root[data-theme-mode="dark"] .ghost-button,
+:root[data-theme-mode="dark"] .icon-text-button,
+:root[data-theme-mode="dark"] .icon-button {
+  background: var(--color-surface-soft);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+:root[data-theme-mode="dark"] .panel-copy,
+:root[data-theme-mode="dark"] .task-meta,
+:root[data-theme-mode="dark"] .settings-helper,
+:root[data-theme-mode="dark"] .field-hint {
+  color: var(--color-muted);
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -4084,6 +4364,10 @@ textarea:focus-visible {
   .task-row,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .appearance-card {
+    grid-column: auto;
   }
 
   .task-search {
