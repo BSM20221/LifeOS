@@ -2543,6 +2543,45 @@ button.tag-chip:hover {
   align-items: end;
 }
 
+.insights-header-controls {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.insights-view-switch {
+  align-items: center;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 4px;
+}
+
+.insights-view-switch button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.86rem;
+  font-weight: 900;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.insights-view-switch button.active {
+  background: var(--color-surface);
+  box-shadow: 0 8px 20px rgba(22, 32, 29, 0.08);
+  color: var(--color-text-strong);
+}
+
+.insights-view-switch button:focus-visible {
+  outline: 2px solid rgba(35, 104, 115, 0.62);
+  outline-offset: 2px;
+}
+
 .insights-header-panel h3,
 .insights-section-heading h3 {
   margin: 0;

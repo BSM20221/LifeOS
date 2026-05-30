@@ -1747,49 +1747,21 @@ function ProtectedLifeOS({ user }: { user: User }) {
         ) : null}
 
         {activePage === "insights" ? (
-          <>
-            <InsightsPage
-              userId={user.uid}
-              tasks={tasks}
-              projects={projects}
-              focusSessions={focusSessions}
-              dailyPlan={dailyPlan}
-              dailyPlans={dailyPlans}
-              tagCounts={tagCounts}
-              todayDateId={todayDateId}
-              messages={insightMessages}
-              quote={dailyQuote}
-              quoteFavorite={isDailyQuoteFavorite}
-              onRefreshQuote={refreshQuote}
-              onToggleFavoriteQuote={toggleFavoriteQuote}
-            />
-            <section className="weekly-mini-panel panel">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Weekly</p>
-                  <h3>Weekly Review snapshot</h3>
-                </div>
-                <a className="secondary-button" href="#weekly-review">
-                  <CalendarDays size={17} />
-                  Review
-                </a>
-              </div>
-              <div className="dashboard-today-plan">
-                <div>
-                  <strong>{weeklyDashboardStats.completedTasks}</strong>
-                  <span>completed tasks</span>
-                </div>
-                <div>
-                  <strong>{formatMinutes(weeklyDashboardStats.focusMinutes)}</strong>
-                  <span>focus this week</span>
-                </div>
-                <div>
-                  <strong>{weeklyDashboardStats.habitCompletionRate === null ? "N/A" : `${weeklyDashboardStats.habitCompletionRate}%`}</strong>
-                  <span>habit completion</span>
-                </div>
-              </div>
-            </section>
-          </>
+          <InsightsPage
+            userId={user.uid}
+            tasks={tasks}
+            projects={projects}
+            focusSessions={focusSessions}
+            dailyPlan={dailyPlan}
+            dailyPlans={dailyPlans}
+            tagCounts={tagCounts}
+            todayDateId={todayDateId}
+            messages={insightMessages}
+            quote={dailyQuote}
+            quoteFavorite={isDailyQuoteFavorite}
+            onRefreshQuote={refreshQuote}
+            onToggleFavoriteQuote={toggleFavoriteQuote}
+          />
         ) : null}
 
         {activePage === "habits" ? (
@@ -2492,7 +2464,7 @@ function getPageLabel(page: PageId) {
 function getPageHeadline(page: PageId) {
   switch (page) {
     case "dashboard":
-      return "A Firestore-backed command center for tasks and projects.";
+      return "Today, focus, and review in one place.";
     case "projects":
       return "Plan outcomes, track progress, and connect tasks to real work.";
     case "saved-views":
@@ -2506,13 +2478,13 @@ function getPageHeadline(page: PageId) {
     case "focus":
       return "Start Pomodoro sessions, protect Deep Work, and track focused minutes.";
     case "insights":
-      return "Notice patterns across tasks, projects, planning, and focus.";
+      return "Overview for decisions. Reporting for deeper filters.";
     case "habits":
       return "Build small habits that compound.";
     case "weekly-review":
       return "Reflect on the week, review patterns, and choose next-week priorities.";
     case "settings":
-      return "Install, back up, restore, export, and review account safety.";
+      return "Install, back up, restore, and manage account safety.";
     case "privacy":
       return "How LifeOS stores and handles your personal workspace data.";
     case "terms":

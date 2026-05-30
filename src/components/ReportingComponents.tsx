@@ -97,8 +97,8 @@ export function ReportingDashboard({
       <div className="reporting-dashboard-header">
         <div>
           <p className="eyebrow">Reporting</p>
-          <h3 id="reporting-title">Modern reporting dashboard</h3>
-          <p>Filter tasks, projects, focus sessions, plans, priorities, and tags into chart-first reports.</p>
+          <h3 id="reporting-title">Filtered performance reports</h3>
+          <p>Use this mode when you want a specific answer by date range, project, area, tag, priority, or focus mode.</p>
         </div>
         <Badge tone={filters.includeDemoData ? "info" : "neutral"}>{filters.includeDemoData ? "Demo data visible" : "Real data only"}</Badge>
       </div>

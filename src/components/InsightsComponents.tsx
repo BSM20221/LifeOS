@@ -38,8 +38,6 @@ import {
   getProjectPerformance,
   getRangeBuckets,
   getTagPerformance,
-  getTaskCompletionByArea,
-  getTaskCompletionByProject,
   type AnalyticsDateRange,
 } from "../insightsUtils";
 import { getCompletedFocusMinutes, resolveFocusSessionProjectId } from "../focusUtils";
@@ -126,6 +124,7 @@ export function InsightsPage({
   onRefreshQuote: () => void;
   onToggleFavoriteQuote: () => void;
 }) {
+  const [activeView, setActiveView] = useState<"overview" | "reporting">("overview");
   const [selectedRange, setSelectedRange] = useState<AnalyticsRange>("7-days");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -148,8 +147,6 @@ export function InsightsPage({
   const completedTrend = useMemo(() => getCompletedTasksByDay(tasks, buckets), [buckets, tasks]);
   const focusTrend = useMemo(() => getFocusMinutesByDay(focusSessions, buckets), [buckets, focusSessions]);
   const focusByProject = useMemo(() => getFocusByProject(focusSessions, projects, analyticsRange, tasks), [analyticsRange, focusSessions, projects, tasks]);
-  const taskCompletionByProject = useMemo(() => getTaskCompletionByProject(tasks, projects, analyticsRange), [analyticsRange, projects, tasks]);
-  const taskCompletionByArea = useMemo(() => getTaskCompletionByArea(tasks, projects, analyticsRange), [analyticsRange, projects, tasks]);
   const openTasksByArea = useMemo(() => getOpenTasksByArea(tasks, projects), [projects, tasks]);
   const overdueByProject = useMemo(() => getOverdueTasksByProject(tasks, projects), [projects, tasks]);
   const priorityStats = useMemo(() => getPriorityCompletionStats(tasks, analyticsRange), [analyticsRange, tasks]);
@@ -184,42 +181,65 @@ export function InsightsPage({
   const summary = getPerformanceSummary(projectPerformance, areaPerformance);
   const projectRows = getProjectComparisonRows(projectPerformance);
   const areaRows = getAreaComparisonRows(areaPerformance);
-  const priorityRows = getPriorityRows(priorityStats);
-  const tagRows = tagPerformance.slice(0, 8).map((tag) => ({
-    label: `#${tag.tag}`,
-    segments: [
-      { key: "open", label: "Open", value: tag.openTasks, color: chartPalette.open },
-      { key: "completed", label: "Completed", value: tag.completedTasks, color: chartPalette.completed },
-    ],
-  }));
 
   return (
     <section className="insights-page advanced-insights">
       <section className="insights-header-panel panel">
         <div>
           <p className="eyebrow">Insights</p>
-          <h3>Overview and Reporting</h3>
-          <p>Readable task, focus, project, and area summaries for the selected range.</p>
+          <h3>{activeView === "overview" ? "Clear signals, not noise" : "Detailed reporting"}</h3>
+          <p>
+            {activeView === "overview"
+              ? "Start here for the few patterns that should change what you do next."
+              : "Use Reporting when you need filters, tables, and chart-level detail."}
+          </p>
         </div>
-        <AnalyticsRangeSelector
-          value={selectedRange}
-          onChange={setSelectedRange}
-          customStart={customStart}
-          customEnd={customEnd}
-          onCustomStartChange={setCustomStart}
-          onCustomEndChange={setCustomEnd}
-        />
+        <div className="insights-header-controls">
+          <div className="insights-view-switch" role="tablist" aria-label="Insights view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "overview"}
+              className={activeView === "overview" ? "active" : ""}
+              onClick={() => setActiveView("overview")}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "reporting"}
+              className={activeView === "reporting" ? "active" : ""}
+              onClick={() => setActiveView("reporting")}
+            >
+              Reporting
+            </button>
+          </div>
+          {activeView === "overview" ? (
+            <AnalyticsRangeSelector
+              value={selectedRange}
+              onChange={setSelectedRange}
+              customStart={customStart}
+              customEnd={customEnd}
+              onCustomStartChange={setCustomStart}
+              onCustomEndChange={setCustomEnd}
+            />
+          ) : null}
+        </div>
       </section>
 
-      <ReportingDashboard
-        userId={userId}
-        tasks={tasks}
-        projects={projects}
-        focusSessions={focusSessions}
-        dailyPlans={plansForAnalytics}
-        tagCounts={tagCounts}
-        todayDateId={todayDateId}
-      />
+      {activeView === "reporting" ? (
+        <ReportingDashboard
+          userId={userId}
+          tasks={tasks}
+          projects={projects}
+          focusSessions={focusSessions}
+          dailyPlans={plansForAnalytics}
+          tagCounts={tagCounts}
+          todayDateId={todayDateId}
+        />
+      ) : (
+        <>
 
       <PerformanceSummary summary={summary} rangeLabel={analyticsRange.label} />
 
@@ -340,69 +360,11 @@ export function InsightsPage({
         <section className="chart-grid insights-chart-grid">
           <PriorityBreakdownChart stats={priorityStats} />
           <PlannedVsCompletedCard stats={plannedStats} range={analyticsRange} />
-          <AnalyticsStackedBarChart
-            title="Task completion by project"
-            subtitle="Completed vs current open tasks"
-            rows={taskCompletionByProject.map((project) => {
-              const counts = parseCompletedOpen(project.detail);
-              return {
-                label: project.label,
-                segments: [
-                  { key: "completed", label: "Completed", value: counts.completed, color: project.color ?? chartPalette.completed },
-                  { key: "open", label: "Open", value: counts.open, color: chartPalette.open },
-                ],
-              };
-            })}
-            legend={[
-              { label: "Completed", color: chartPalette.completed },
-              { label: "Open", color: chartPalette.open },
-            ]}
-            unit="tasks"
-            emptyMessage="No project task performance yet."
-            explanation="Use this to spot projects that collect open tasks but do not get completed work."
-          />
-          <AnalyticsStackedBarChart
-            title="Task completion by area"
-            subtitle="Completed vs current open tasks"
-            rows={taskCompletionByArea.map((area) => {
-              const counts = parseCompletedOpen(area.detail);
-              return {
-                label: area.label,
-                segments: [
-                  { key: "completed", label: "Completed", value: counts.completed, color: chartPalette.completed },
-                  { key: "open", label: "Open", value: counts.open, color: chartPalette.open },
-                ],
-              };
-            })}
-            legend={[
-              { label: "Completed", color: chartPalette.completed },
-              { label: "Open", color: chartPalette.open },
-            ]}
-            unit="tasks"
-            emptyMessage="No area completion data yet."
-            explanation="Areas use project assignments first, then tags for unassigned tasks."
-          />
           <TagPerformancePanel tags={tagPerformance} />
         </section>
       </InsightsSection>
-
-      <InsightsSection title="Focus" eyebrow="Deep work signal" description="Focus minutes show what actually received protected attention.">
-        <section className="chart-grid insights-chart-grid">
-          <ProjectFocusChart data={focusByProject} />
-          <CategoryShareChart
-            title="Project focus share"
-            subtitle="Which project received deep work"
-            data={focusByProject}
-            unit="min"
-            emptyMessage={focusDiagnostic.projectMessage}
-            explanation={focusByProject.length > 0 ? `Focus is concentrated in ${focusByProject[0].label}.` : focusDiagnostic.projectMessage}
-          />
-        </section>
-      </InsightsSection>
-
-      <InsightsSection title="Messages" eyebrow="Rule-based next actions" description="Specific recommendations generated from projects, priorities, overdue tasks, and planning data.">
-        <RecommendationList recommendations={recommendations} />
-      </InsightsSection>
+        </>
+      )}
     </section>
   );
 }
@@ -1313,14 +1275,6 @@ function getPlanningRows(stats: PlannedVsCompletedStats): StackRow[] {
       ],
     },
   ];
-}
-
-function parseCompletedOpen(detail = "") {
-  const match = detail.match(/(\d+) completed, (\d+) open/);
-  return {
-    completed: match ? Number(match[1]) : 0,
-    open: match ? Number(match[2]) : 0,
-  };
 }
 
 function messagesToRecommendations(messages: InsightMessage[]): PerformanceRecommendation[] {
