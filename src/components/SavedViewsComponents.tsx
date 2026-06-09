@@ -77,7 +77,7 @@ export function SavedViewsPage({
           </button>
         </div>
 
-        {filtersLoading ? <EmptyState title="Loading saved views" message="Reading your user-specific Firestore filters." /> : null}
+        {filtersLoading ? <EmptyState title="Loading saved views" message="Loading your saved task views." /> : null}
         {!filtersLoading && filters.length === 0 ? (
           <EmptyState title="No saved views yet" message="Create a custom view or start from a suggested filter." />
         ) : null}

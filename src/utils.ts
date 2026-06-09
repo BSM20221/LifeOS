@@ -17,7 +17,7 @@ export function getFriendlyError(error: unknown) {
         return "Enter a valid email address.";
       case "permission-denied":
       case "firestore/permission-denied":
-        return "Firestore rejected the request. Check that you are signed in and your rules are deployed.";
+        return "The app could not save this change. Check that you are signed in and try again.";
       default:
         return error.message;
     }

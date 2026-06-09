@@ -62,7 +62,7 @@ export function ProjectsPage({
           </button>
         </div>
 
-        {loading ? <EmptyState title="Loading projects" message="Reading your user-specific Firestore project collection." /> : null}
+        {loading ? <EmptyState title="Loading projects" message="Loading your project list." /> : null}
 
         {!loading && projects.length === 0 ? (
           <EmptyState

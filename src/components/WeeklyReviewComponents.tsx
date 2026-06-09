@@ -362,7 +362,7 @@ function WeeklyStickySaveBar({
     status === "dirty"
       ? "You have unsaved changes. Save before leaving or refreshing."
       : status === "saving"
-        ? "Writing this week review to Firestore."
+        ? "Saving this week's review."
         : status === "error"
           ? "Save failed. Your text is still in the form."
           : isComplete && completedAt

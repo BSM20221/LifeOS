@@ -1,7 +1,6 @@
 import { AlertTriangle, Monitor, Moon, Paintbrush, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import type { User } from "firebase/auth";
 import { useEffect, useMemo, useState } from "react";
-import { firebaseEnvStatus } from "../../firebase";
 import type { AppIconId, Project, SavedFilter, Task, ThemeMode, ThemePreset, UserSettings } from "../../types";
 import {
   appIconOptions,
@@ -65,7 +64,6 @@ export function SettingsPage({
 }) {
   const openCount = tasks.filter((task) => !["done", "archived"].includes(task.status)).length;
   const activeProjectCount = projects.filter((project) => project.status === "active" || project.status === "paused").length;
-  const configuredCount = firebaseEnvStatus.filter((item) => item.configured).length;
 
   return (
     <section className="content-grid settings-grid">
@@ -83,8 +81,8 @@ export function SettingsPage({
             <dd>{user.email}</dd>
           </div>
           <div>
-            <dt>User ID</dt>
-            <dd>{user.uid}</dd>
+            <dt>Account</dt>
+            <dd>Active</dd>
           </div>
           <div>
             <dt>Open tasks</dt>
@@ -103,26 +101,6 @@ export function SettingsPage({
             <dd>{tagCount}</dd>
           </div>
         </dl>
-      </article>
-
-      <article className="panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Firebase</p>
-            <h3>Environment</h3>
-          </div>
-          <Sparkles size={20} />
-        </div>
-        <p className="panel-copy">
-          {configuredCount} of {firebaseEnvStatus.length} Firebase variables are present in the Vite environment.
-        </p>
-        <div className="env-list">
-          {firebaseEnvStatus.map((item) => (
-            <span className={item.configured ? "configured" : ""} key={item.key}>
-              {item.key}
-            </span>
-          ))}
-        </div>
       </article>
 
       <AppearanceCard user={user} settings={appearanceSettings} loading={appearanceLoading} onSave={onSaveAppearance} />
@@ -255,7 +233,7 @@ function AppearanceCard({
         <Paintbrush size={20} />
       </div>
       <p className="panel-copy">
-        Choose a light, dark, or system theme. Custom colors update LifeOS inside the app; installed PWA icons may need reinstalling to refresh.
+        Choose a light, dark, or system theme. Custom colors update LifeOS inside the app; installed icons may need reinstalling to refresh.
       </p>
 
       <div className="appearance-preview">
@@ -375,7 +353,7 @@ function DataBackupCard({
         <ShieldCheck size={20} />
       </div>
       <p className="panel-copy">
-        Export a JSON backup of your user-owned Firestore data. Imports merge safely and skip documents when matching IDs already exist.
+        Export a JSON backup of your LifeOS data. Imports merge safely and skip documents when matching IDs already exist.
       </p>
       <div className="settings-actions-row">
         <button className="primary-button" type="button" onClick={() => void onExportData()} disabled={backupBusy}>
@@ -432,7 +410,7 @@ function DangerZoneCard({
         <AlertTriangle size={20} />
       </div>
       <p className="panel-copy">
-        These actions are permanent. Delete app data keeps your Firebase Auth account. Delete account reauthenticates first, then removes app data and the Auth account.
+        These actions are permanent. Delete app data keeps your login account. Delete account confirms your identity first, then removes app data and the login account.
       </p>
       <div className="settings-actions-row">
         <button className="secondary-button danger-button" type="button" onClick={onDeleteAppData} disabled={backupBusy}>

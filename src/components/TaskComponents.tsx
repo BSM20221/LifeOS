@@ -100,13 +100,13 @@ export function TaskSection({
       <div className="panel-heading">
         <div>
           <p className="eyebrow">{title}</p>
-          <h3>{loading ? "Syncing with Firestore" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}</h3>
+          <h3>{loading ? "Syncing tasks" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}</h3>
         </div>
       </div>
 
       <TaskFilters criteria={filterCriteria} projects={projects} tags={tags} onChange={onFilterChange} onClear={onClearFilters} />
 
-      {loading ? <EmptyState title="Loading tasks" message="Reading your user-specific Firestore task collection." /> : null}
+      {loading ? <EmptyState title="Loading tasks" message="Loading your task list." /> : null}
       {!loading && tasks.length === 0 ? <EmptyState title={emptyState.title} message={emptyState.message} /> : null}
 
       <div className="task-list">

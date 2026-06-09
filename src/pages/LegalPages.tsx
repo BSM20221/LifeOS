@@ -26,16 +26,16 @@ export function PrivacyPage() {
       <p className="eyebrow">Privacy</p>
       <h3>Simple LifeOS privacy note</h3>
       <p>
-        LifeOS stores your app data in Firebase under your signed-in user account. This includes tasks, projects, saved views, habits,
-        reminders, focus sessions, daily plans, reflections, weekly reviews, and quote favorites.
+        LifeOS stores your app data under your signed-in account. This includes tasks, projects, saved views, habits, reminders, focus
+        sessions, daily plans, reflections, weekly reviews, and quote favorites.
       </p>
       <p>
         You can export your data from Settings and you can delete your LifeOS app data. Browser notifications are optional and only requested
         after you click an enable button.
       </p>
       <p>
-        LifeOS does not collect payment data. AI processing, calendar sync, team collaboration, and payments are not part of this version.
-        Do not put secrets in task text unless you are comfortable storing them in your Firebase project.
+        LifeOS does not collect payment data. Calendar sync, team collaboration, and payments are not part of this version. Do not put
+        sensitive secrets in task text unless you are comfortable storing them in your account.
       </p>
       <p className="settings-helper">This is a plain product note, not lawyer-approved legal advice.</p>
     </section>
@@ -49,7 +49,7 @@ export function TermsPage() {
       <h3>Simple LifeOS terms</h3>
       <p>
         LifeOS is a personal productivity app for planning, reflection, focus, habits, and reminders. You are responsible for deciding what
-        data to store and for maintaining access to your Firebase-backed account.
+        data to store and for maintaining access to your account.
       </p>
       <p>
         The app is provided as-is. There is no guarantee of uninterrupted service, perfect reminders, or permanent availability. Export your

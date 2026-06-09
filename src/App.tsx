@@ -1482,7 +1482,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   function confirmDeleteAppData() {
     requestConfirmation({
       title: "Delete all LifeOS data",
-      description: "This deletes tasks, projects, views, daily plans, focus sessions, favorite quotes, habits, weekly reviews, and settings for this signed-in account. Your Firebase Auth account stays active.",
+      description: "This deletes tasks, projects, views, daily plans, focus sessions, favorite quotes, habits, weekly reviews, and settings for this signed-in account. Your login account stays active.",
       confirmLabel: "Delete app data",
       cancelLabel: "Cancel",
       variant: "destructive",
@@ -1496,8 +1496,8 @@ function ProtectedLifeOS({ user }: { user: User }) {
     requestConfirmation({
       title: "Delete account",
       description: usesPasswordProvider
-        ? "This deletes your LifeOS app data and your Firebase Auth account. Re-enter your password so Firebase can confirm this destructive action before any app data is deleted."
-        : "This deletes your LifeOS app data and your Firebase Auth account. If Firebase requires recent login, log out and log in again with your provider before retrying.",
+        ? "This deletes your LifeOS app data and your login account. Re-enter your password so this destructive action can be confirmed before any app data is deleted."
+        : "This deletes your LifeOS app data and your login account. If a fresh login is required, log out and log in again with your provider before retrying.",
       confirmLabel: "Delete account",
       cancelLabel: "Cancel",
       variant: "destructive",
@@ -1549,9 +1549,9 @@ function ProtectedLifeOS({ user }: { user: User }) {
       setActionMessage("LifeOS account deleted.");
     } catch (error) {
       if (isFirebaseErrorCode(error, "auth/requires-recent-login")) {
-        throw new Error("App data was deleted, but Firebase still requires a fresh login before deleting the Auth account. Log in again, then retry account deletion.");
+        throw new Error("App data was deleted, but a fresh login is still required before deleting the login account. Log in again, then retry account deletion.");
       }
-      throw new Error(`App data was deleted, but the Auth account could not be deleted: ${getFriendlyError(error)}`);
+      throw new Error(`App data was deleted, but the login account could not be deleted: ${getFriendlyError(error)}`);
     }
   }
 
@@ -2201,7 +2201,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
             <p>
               {nextTask
                 ? `${displayWithEmoji(projectById.get(nextTask.projectId ?? "")?.name ?? "No project", projectById.get(nextTask.projectId ?? "")?.emoji)} - ${nextTask.priority} priority.`
-                : "Your Firestore task list is empty. Add one below or create starter projects."}
+                : "Your task list is empty. Add one below or create starter projects."}
             </p>
             <QuickCapture label="Quick capture" onCreate={onQuickCreate} />
           </div>

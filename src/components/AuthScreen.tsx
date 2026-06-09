@@ -90,11 +90,11 @@ export function AuthScreen() {
           <p>
             {mode === "signup"
               ? "Use a real inbox. LifeOS sends a verification link before opening your workspace."
-              : "Tasks and projects are stored in your authenticated Firestore user space."}
+              : "Tasks and projects stay private inside your signed-in workspace."}
           </p>
         </div>
 
-        <div className="segmented-control" aria-label="Authentication mode">
+        <div className="segmented-control" aria-label="Account mode">
           <button className={mode === "login" ? "active" : ""} type="button" onClick={() => switchMode("login")}>
             Login
           </button>
@@ -181,7 +181,7 @@ export function AuthScreen() {
 
 export function EmailVerificationScreen({ user, onVerified }: { user: User; onVerified: () => void }) {
   const [busy, setBusy] = useState<"checking" | "sending" | "">("");
-  const [message, setMessage] = useState("Check your inbox and click the verification link Firebase sent.");
+  const [message, setMessage] = useState("Check your inbox and click the verification link we sent.");
   const [error, setError] = useState("");
 
   async function resendVerification() {

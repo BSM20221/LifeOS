@@ -132,7 +132,7 @@ export function FocusPage({
 
           {notice ? <StatusBanner tone="success" message={notice} /> : null}
           {error ? <StatusBanner tone="error" message={error} /> : null}
-          {activeSession ? <StatusBanner tone="info" message="Recovered active focus session from Firestore." /> : null}
+          {activeSession ? <StatusBanner tone="info" message="Recovered your active focus session." /> : null}
 
           <FocusTimer session={activeSession} onCompleteSession={completeSession} />
 
@@ -397,7 +397,7 @@ export function FocusSessionList({
           <h3>Today's focus sessions</h3>
         </div>
       </div>
-      {loading ? <EmptyState title="Loading focus sessions" message="Reading your user-specific Firestore focus sessions." /> : null}
+      {loading ? <EmptyState title="Loading focus sessions" message="Loading today's focus history." /> : null}
       {!loading && sessions.length === 0 ? <EmptyState title="No focus sessions today" message="Start a Pomodoro to begin tracking focused minutes." /> : null}
       <div className="focus-session-list">
         {sessions.map((session) => {

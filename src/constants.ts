@@ -20,7 +20,7 @@ export const starterProjects = [
   },
   {
     name: "Full Stack Development",
-    description: "Frontend, backend, Firebase, deployment, and portfolio work.",
+    description: "Web app, deployment, and portfolio work.",
     color: "#334963",
     area: "Study",
     emoji: "💻",

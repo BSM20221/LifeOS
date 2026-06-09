@@ -94,7 +94,7 @@ export function TodayPage({
 
       <TodaySummary stats={stats} focusStats={focusStats} />
 
-      {loading ? <EmptyState title="Loading daily plan" message="Reading today's planning document from Firestore." /> : null}
+      {loading ? <EmptyState title="Loading daily plan" message="Loading today's plan." /> : null}
 
       <section className="today-grid">
         <TopThreePlanner

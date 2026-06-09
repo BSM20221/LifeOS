@@ -434,7 +434,7 @@ export function ReminderPermissionCard({
         </div>
         <Bell size={20} />
       </div>
-      <p className="panel-copy">Browser notifications work while LifeOS is open. Full background reminders will come in a future PWA phase.</p>
+      <p className="panel-copy">Browser notifications work while LifeOS is open. Full background reminders will come in a future version.</p>
       <span className="status-pill">{label}</span>
       <Button type="button" variant="secondary" onClick={() => void handleEnable()} disabled={busy || permission === "granted" || permission === "unsupported"}>
         {busy ? "Requesting..." : "Enable notifications"}
