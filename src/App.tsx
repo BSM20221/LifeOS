@@ -11,11 +11,13 @@ import {
   LayoutDashboard,
   ListFilter,
   LogOut,
+  Menu,
   Plus,
   Settings,
   ShieldCheck,
   Sparkles,
   Timer,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
@@ -78,7 +80,7 @@ import {
 } from "./insightsUtils";
 import { displayWithEmoji } from "./emojiPresets";
 import { getDailyQuote, getRandomQuote } from "./quotes";
-import { AuthScreen } from "./components/AuthScreen";
+import { AuthScreen, EmailVerificationScreen } from "./components/AuthScreen";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { FocusPage } from "./components/FocusComponents";
 import { HabitForm, HabitsPage } from "./components/HabitComponents";
@@ -167,9 +169,14 @@ const navItems: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
+function requiresEmailVerification(user: User) {
+  return Boolean(user.email && !user.emailVerified && user.providerData.some((provider) => provider.providerId === "password"));
+}
+
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [, refreshAuthView] = useState(0);
   const [publicPage, setPublicPage] = useState<PageId>(() => getPageFromHash());
 
   useEffect(() => {
@@ -197,11 +204,16 @@ export function App() {
     return <AuthScreen />;
   }
 
+  if (requiresEmailVerification(user)) {
+    return <EmailVerificationScreen user={user} onVerified={() => refreshAuthView((value) => value + 1)} />;
+  }
+
   return <ProtectedLifeOS user={user} />;
 }
 
 function ProtectedLifeOS({ user }: { user: User }) {
   const [activePage, setActivePage] = useState<PageId>(() => getPageFromHash());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [taskEditor, setTaskEditor] = useState<TaskEditorState | null>(null);
   const [projectEditor, setProjectEditor] = useState<ProjectEditorState | null>(null);
   const [savedFilterEditor, setSavedFilterEditor] = useState<SavedFilterEditorState | null>(null);
@@ -252,10 +264,37 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const dailyQuote = useMemo(() => getDailyQuote(todayDateId, quoteOffset), [quoteOffset, todayDateId]);
 
   useEffect(() => {
-    const handleHashChange = () => setActivePage(getPageFromHash());
+    const handleHashChange = () => {
+      setActivePage(getPageFromHash());
+      setMobileNavOpen(false);
+    };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  useEffect(() => {
+    if (!mobileNavOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileNavOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileNavOpen]);
+
+  useEffect(() => {
+    if (!actionMessage) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setActionMessage(""), 4_500);
+    return () => window.clearTimeout(timer);
+  }, [actionMessage]);
 
   useEffect(() => {
     setWeeklySaveState({ status: "idle", message: "" });
@@ -645,7 +684,6 @@ function ProtectedLifeOS({ user }: { user: User }) {
         },
         { merge: true }
       );
-      setActionMessage("Appearance saved.");
     } catch (error) {
       setActionError(getFriendlyError(error));
       throw error;
@@ -1626,8 +1664,30 @@ function ProtectedLifeOS({ user }: { user: User }) {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar" aria-label="Primary">
+    <main className={`app-shell ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+      <header className="mobile-nav-bar">
+        <div className="brand-row">
+          <span className="brand-mark app-icon-mark" aria-hidden="true" />
+          <div>
+            <p className="eyebrow">{pageTitle}</p>
+            <strong>LifeOS</strong>
+          </div>
+        </div>
+        <button
+          className="mobile-nav-toggle"
+          type="button"
+          aria-controls="primary-sidebar"
+          aria-expanded={mobileNavOpen}
+          aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </header>
+
+      {mobileNavOpen ? <button className="mobile-nav-scrim" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
+
+      <aside className="sidebar" id="primary-sidebar" aria-label="Primary">
         <div className="brand-row">
           <span className="brand-mark app-icon-mark" aria-hidden="true" />
           <div>
@@ -1638,7 +1698,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         <nav className="nav-list">
           {navItems.map(({ id, label, icon: Icon }) => (
-            <a className={activePage === id ? "active" : ""} href={`#${id}`} key={id}>
+            <a className={activePage === id ? "active" : ""} href={`#${id}`} key={id} onClick={() => setMobileNavOpen(false)}>
               <Icon size={18} />
               <span>{label}</span>
               {getNavBadge(navBadges[id as keyof typeof navBadges]) ? (
@@ -1656,7 +1716,14 @@ function ProtectedLifeOS({ user }: { user: User }) {
           </div>
         </section>
 
-        <button className="secondary-button full-width" type="button" onClick={() => void signOut(auth)}>
+        <button
+          className="secondary-button full-width"
+          type="button"
+          onClick={() => {
+            setMobileNavOpen(false);
+            void signOut(auth);
+          }}
+        >
           <LogOut size={17} />
           Logout
         </button>
