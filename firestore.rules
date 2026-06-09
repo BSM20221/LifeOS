@@ -131,7 +131,7 @@ service cloud.firestore {
       }
 
       match /settings/{settingId} {
-        allow read, create, update, delete: if ownsUserSpace(uid) && settingId == "main";
+        allow read, create, update, delete: if ownsUserSpace(uid);
       }
 
       match /{document=**} {
