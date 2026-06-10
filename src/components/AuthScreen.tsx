@@ -16,7 +16,7 @@ import { StatusBanner } from "./Common";
 
 type AuthMode = "login" | "signup" | "reset";
 
-export function AuthScreen() {
+export function AuthScreen({ onTryDemo }: { onTryDemo?: () => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,6 +50,7 @@ export function AuthScreen() {
           { merge: true }
         );
         await sendEmailVerification(credential.user);
+        window.localStorage.setItem("lifeos-onboarding-pending", "1");
         setNotice("Verification email sent. Open your inbox and click the link before using LifeOS.");
       } else if (mode === "reset") {
         await sendPasswordResetEmail(auth, email.trim());
@@ -93,6 +94,19 @@ export function AuthScreen() {
               : "Tasks and projects stay private inside your signed-in workspace."}
           </p>
         </div>
+
+        {onTryDemo ? (
+          <section className="auth-demo-card" aria-label="Try LifeOS demo">
+            <div>
+              <p className="eyebrow">Portfolio demo</p>
+              <strong>Explore without an email</strong>
+              <span>Open a sample workspace with tasks, projects, focus, insights, and weekly review.</span>
+            </div>
+            <button className="secondary-button" type="button" onClick={onTryDemo}>
+              Try demo
+            </button>
+          </section>
+        ) : null}
 
         <div className="segmented-control" aria-label="Account mode">
           <button className={mode === "login" ? "active" : ""} type="button" onClick={() => switchMode("login")}>

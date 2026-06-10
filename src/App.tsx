@@ -81,11 +81,13 @@ import {
 import { displayWithEmoji } from "./emojiPresets";
 import { getDailyQuote, getRandomQuote } from "./quotes";
 import { AuthScreen, EmailVerificationScreen } from "./components/AuthScreen";
+import { DemoWorkspace } from "./components/DemoWorkspace";
 import { EmptyState, FullScreenState, MetricCard, StatusBanner } from "./components/Common";
 import { FocusPage } from "./components/FocusComponents";
 import { HabitForm, HabitsPage } from "./components/HabitComponents";
 import { InsightsPage, InsightMessageList, RecommendationList } from "./components/InsightsComponents";
 import { ConfirmDialog } from "./components/ModalComponents";
+import { ProductTour, type ProductTourStep } from "./components/ProductTour";
 import { ProjectForm, ProjectsPage } from "./components/ProjectComponents";
 import { DailyQuoteCard } from "./components/QuoteComponents";
 import { SavedViewForm, SavedViewsPage } from "./components/SavedViewsComponents";
@@ -132,6 +134,8 @@ type NavItem = {
   icon: LucideIcon;
 };
 
+type PublicPageId = PageId | "demo";
+
 type TaskEditorState = {
   task: Task | null;
   defaultStatus: TaskStatus;
@@ -169,6 +173,68 @@ const navItems: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
+const ONBOARDING_PENDING_KEY = "lifeos-onboarding-pending";
+const ONBOARDING_SEEN_KEY = "lifeos-onboarding-seen";
+
+const lifeOSTourSteps: ProductTourStep[] = [
+  {
+    id: "dashboard",
+    title: "Dashboard",
+    body: "Dashboard is the command center. It shows today, focus, recommendations, quotes, project signals, and shortcuts.",
+    targetSelector: '[data-tour="dashboard"]',
+    page: "dashboard",
+  },
+  {
+    id: "inbox",
+    title: "Inbox",
+    body: "Inbox is where you quickly capture loose work. You can organize tasks into Today, Upcoming, projects, tags, and priorities later.",
+    targetSelector: '[data-tour="inbox"]',
+    page: "inbox",
+  },
+  {
+    id: "today",
+    title: "Today planning",
+    body: "Today is for choosing Top 3 priorities, selecting a Deep Work task, planning time blocks, and writing a daily reflection.",
+    targetSelector: '[data-tour="today"]',
+    page: "today",
+  },
+  {
+    id: "projects",
+    title: "Projects",
+    body: "Projects connect tasks to bigger areas like study, coding, client work, health, and business.",
+    targetSelector: '[data-tour="projects"]',
+    page: "projects",
+  },
+  {
+    id: "focus",
+    title: "Focus",
+    body: "Focus sessions help track real deep work time. Sessions can link to tasks and projects for better progress tracking.",
+    targetSelector: '[data-tour="focus"]',
+    page: "focus",
+  },
+  {
+    id: "insights",
+    title: "Insights",
+    body: "Insights explain what is going well, what needs attention, and which projects or tags are collecting unfinished work.",
+    targetSelector: '[data-tour="insights"]',
+    page: "insights",
+  },
+  {
+    id: "weekly-review",
+    title: "Weekly Review",
+    body: "Weekly Review helps you reflect on wins, struggles, habits, focus, and next-week priorities.",
+    targetSelector: '[data-tour="weekly-review"]',
+    page: "weekly-review",
+  },
+  {
+    id: "settings",
+    title: "Settings",
+    body: "Settings is where you change themes, install the app, export backups, import data, and manage account safety.",
+    targetSelector: '[data-tour="settings"]',
+    page: "settings",
+  },
+];
+
 function requiresEmailVerification(user: User) {
   return Boolean(user.email && !user.emailVerified && user.providerData.some((provider) => provider.providerId === "password"));
 }
@@ -177,7 +243,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [, refreshAuthView] = useState(0);
-  const [publicPage, setPublicPage] = useState<PageId>(() => getPageFromHash());
+  const [publicPage, setPublicPage] = useState<PublicPageId>(() => getPublicPageFromHash());
 
   useEffect(() => {
     return onAuthStateChanged(auth, (nextUser) => {
@@ -187,7 +253,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const handleHashChange = () => setPublicPage(getPageFromHash());
+    const handleHashChange = () => setPublicPage(getPublicPageFromHash());
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
@@ -197,11 +263,29 @@ export function App() {
   }
 
   if (!user) {
+    if (publicPage === "demo") {
+      return (
+        <DemoWorkspace
+          onExit={() => {
+            window.location.hash = "";
+            setPublicPage("dashboard");
+          }}
+        />
+      );
+    }
+
     if (publicPage === "privacy" || publicPage === "terms") {
       return <PublicLegalShell page={publicPage} />;
     }
 
-    return <AuthScreen />;
+    return (
+      <AuthScreen
+        onTryDemo={() => {
+          window.location.hash = "demo";
+          setPublicPage("demo");
+        }}
+      />
+    );
   }
 
   if (requiresEmailVerification(user)) {
@@ -240,6 +324,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [todayDateId] = useState(() => getTodayDateId());
+  const [productTourOpen, setProductTourOpen] = useState(() => window.localStorage.getItem(ONBOARDING_PENDING_KEY) === "1");
 
   const taskState = useUserTasks(user);
   const projectState = useUserProjects(user);
@@ -1698,7 +1783,7 @@ function ProtectedLifeOS({ user }: { user: User }) {
 
         <nav className="nav-list">
           {navItems.map(({ id, label, icon: Icon }) => (
-            <a className={activePage === id ? "active" : ""} href={`#${id}`} key={id} onClick={() => setMobileNavOpen(false)}>
+            <a className={activePage === id ? "active" : ""} data-tour={id} href={`#${id}`} key={id} onClick={() => setMobileNavOpen(false)}>
               <Icon size={18} />
               <span>{label}</span>
               {getNavBadge(navBadges[id as keyof typeof navBadges]) ? (
@@ -1715,6 +1800,18 @@ function ProtectedLifeOS({ user }: { user: User }) {
             <span>{user.email}</span>
           </div>
         </section>
+
+        <button
+          className="secondary-button full-width tour-replay-sidebar"
+          type="button"
+          onClick={() => {
+            setMobileNavOpen(false);
+            setProductTourOpen(true);
+          }}
+        >
+          <Sparkles size={17} />
+          App tour
+        </button>
 
         <button
           className="secondary-button full-width"
@@ -2105,8 +2202,25 @@ function ProtectedLifeOS({ user }: { user: User }) {
       {confirmDialog ? (
         <ConfirmDialog dialog={confirmDialog} busy={confirmBusy} errorMessage={actionError} onCancel={closeConfirmDialog} onConfirm={(password) => void handleConfirmDialog(password)} />
       ) : null}
+
+      <ProductTour
+        open={productTourOpen}
+        steps={lifeOSTourSteps}
+        onClose={closeProductTour}
+        onNavigate={(step) => {
+          if (step.page && navItems.some((item) => item.id === step.page)) {
+            window.location.hash = step.page;
+          }
+        }}
+      />
     </main>
   );
+
+  function closeProductTour() {
+    window.localStorage.removeItem(ONBOARDING_PENDING_KEY);
+    window.localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+    setProductTourOpen(false);
+  }
 
   function DashboardPage({
     nextTask,
@@ -2573,6 +2687,15 @@ function isFirebaseErrorCode(error: unknown, code: string) {
 
 function isEmailPasswordUser(user: User) {
   return Boolean(user.email) && (user.providerData.length === 0 || user.providerData.some((provider) => provider.providerId === "password"));
+}
+
+function getPublicPageFromHash(): PublicPageId {
+  const hash = window.location.hash.replace("#", "");
+  if (hash === "demo") {
+    return "demo";
+  }
+
+  return getPageFromHash();
 }
 
 function getPageFromHash(): PageId {
