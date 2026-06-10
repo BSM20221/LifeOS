@@ -7652,3 +7652,133 @@ textarea:focus-visible {
     border-radius: var(--radius-lg);
   }
 }
+
+/* Dark theme contrast: keep modal and form surfaces readable after component rules. */
+:root[data-theme-mode="dark"] .task-modal-panel,
+:root[data-theme-mode="dark"] .lifeos-dialog {
+  background: #17231f;
+  color: var(--color-text);
+}
+
+:root[data-theme-mode="dark"] .task-modal-heading {
+  border-bottom-color: rgba(232, 241, 236, 0.16);
+}
+
+:root[data-theme-mode="dark"] .task-form label,
+:root[data-theme-mode="dark"] .auth-form label,
+:root[data-theme-mode="dark"] .confirm-phrase-field,
+:root[data-theme-mode="dark"] .due-date-time-fields legend,
+:root[data-theme-mode="dark"] .weekday-picker legend {
+  color: #dce9e3;
+}
+
+:root[data-theme-mode="dark"] .task-form-section,
+:root[data-theme-mode="dark"] .task-advanced-section,
+:root[data-theme-mode="dark"] .repeat-section.is-expanded,
+:root[data-theme-mode="dark"] .reminder-section {
+  background: #1d2b25;
+  border-color: rgba(232, 241, 236, 0.17);
+  color: var(--color-text);
+}
+
+:root[data-theme-mode="dark"] .task-form-section h4,
+:root[data-theme-mode="dark"] .emoji-picker legend,
+:root[data-theme-mode="dark"] .compact-settings-title strong,
+:root[data-theme-mode="dark"] .task-advanced-header strong,
+:root[data-theme-mode="dark"] .reminder-editor-row strong {
+  color: #f8fffb;
+}
+
+:root[data-theme-mode="dark"] .task-advanced-header > svg {
+  color: #cfe1d8;
+}
+
+:root[data-theme-mode="dark"] .task-advanced-header span,
+:root[data-theme-mode="dark"] .field-hint,
+:root[data-theme-mode="dark"] .reminder-editor-row em {
+  color: #b8c9c0;
+}
+
+:root[data-theme-mode="dark"] .task-form input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme-mode="dark"] .task-form select,
+:root[data-theme-mode="dark"] .task-form textarea {
+  background: #16231e;
+  border-color: rgba(232, 241, 236, 0.24);
+  color: #f3fbf7;
+}
+
+:root[data-theme-mode="dark"] .task-form input::placeholder,
+:root[data-theme-mode="dark"] .task-form textarea::placeholder {
+  color: #9aada4;
+  opacity: 1;
+}
+
+:root[data-theme-mode="dark"] .task-form input:disabled,
+:root[data-theme-mode="dark"] .task-form select:disabled,
+:root[data-theme-mode="dark"] .task-form textarea:disabled {
+  background: rgba(232, 241, 236, 0.07);
+  color: #a9bbb2;
+  opacity: 1;
+}
+
+:root[data-theme-mode="dark"] .emoji-picker {
+  background: rgba(15, 23, 20, 0.28);
+  border-color: rgba(232, 241, 236, 0.18);
+}
+
+:root[data-theme-mode="dark"] .emoji-picker-grid button {
+  background: #f8f5ec;
+  border-color: rgba(232, 241, 236, 0.18);
+  color: #1d2b25;
+}
+
+:root[data-theme-mode="dark"] .emoji-picker-grid button.selected {
+  background: #d7eef0;
+  border-color: var(--color-primary);
+  color: #0f2f35;
+  box-shadow: 0 0 0 3px rgba(35, 104, 115, 0.25);
+}
+
+:root[data-theme-mode="dark"] .emoji-picker-grid small {
+  color: #53635b;
+}
+
+:root[data-theme-mode="dark"] .due-date-time-fields,
+:root[data-theme-mode="dark"] .compact-settings-section,
+:root[data-theme-mode="dark"] .weekday-picker,
+:root[data-theme-mode="dark"] .reminder-editor-row,
+:root[data-theme-mode="dark"] .reminder-center-item {
+  background: #16231e;
+  border-color: rgba(232, 241, 236, 0.18);
+}
+
+:root[data-theme-mode="dark"] .disabled-time-placeholder {
+  background: rgba(232, 241, 236, 0.06);
+  border-color: rgba(232, 241, 236, 0.2);
+  color: #a9bbb2;
+}
+
+:root[data-theme-mode="dark"] .compact-settings-body {
+  border-top-color: rgba(232, 241, 236, 0.14);
+}
+
+:root[data-theme-mode="dark"] .switch-control {
+  background: #405149;
+  border-color: rgba(232, 241, 236, 0.18);
+}
+
+:root[data-theme-mode="dark"] .switch-control.is-on {
+  background: var(--color-primary);
+}
+
+:root[data-theme-mode="dark"] .compact-reminder-composer .secondary-button:disabled {
+  background: #33453d;
+  border-color: rgba(232, 241, 236, 0.16);
+  color: #b9cac1;
+  opacity: 1;
+}
+
+:root[data-theme-mode="dark"] .modal-actions,
+:root[data-theme-mode="dark"] .task-modal-actions {
+  background: linear-gradient(180deg, rgba(23, 35, 31, 0), #17231f 28%);
+}
